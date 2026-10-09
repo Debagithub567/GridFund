@@ -9,4 +9,4 @@ GridFund is a Solana-based motorsport sponsorship platform.
 
 ## Development
 Frontend development is the first phase.
-Solana program development will follow.
+
