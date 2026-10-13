@@ -13,32 +13,29 @@ declare_id!("H98fSKptEE9rVR11K75GY5xdUkDk8bEGYsyjuosX9wVQ");
 pub mod gridsupport {
     use super::*;
 
-    pub fn initialize_rider(_ctx: Context<InitializeRider>) -> Result<()> {
-        Err(errors::GridSupportError::NotImplemented.into())
+    pub fn initialize_rider(ctx: Context<InitializeRider>) -> Result<()> {
+        instructions::initialize_rider::handle(ctx)
     }
 
     pub fn create_season(
-        _ctx: Context<CreateSeason>,
+        ctx: Context<CreateSeason>,
         budget_cents: u64,
         title_hash: [u8; 32],
     ) -> Result<()> {
-        let _ = (budget_cents, title_hash);
-        Err(errors::GridSupportError::NotImplemented.into())
+        instructions::create_season::handle(ctx, budget_cents, title_hash)
     }
 
     pub fn add_expense(
-        _ctx: Context<AddExpense>,
+        ctx: Context<AddExpense>,
         estimated_cost_cents: u64,
         category: u8,
         description_hash: [u8; 32],
     ) -> Result<()> {
-        let _ = (estimated_cost_cents, category, description_hash);
-        Err(errors::GridSupportError::NotImplemented.into())
+        instructions::add_expense::handle(ctx, estimated_cost_cents, category, description_hash)
     }
 
-    pub fn sponsor_expense(_ctx: Context<SponsorExpense>, amount_cents: u64) -> Result<()> {
-        let _ = amount_cents;
-        Err(errors::GridSupportError::NotImplemented.into())
+    pub fn sponsor_expense(ctx: Context<SponsorExpense>, amount_cents: u64) -> Result<()> {
+        instructions::sponsor_expense::handle(ctx, amount_cents)
     }
 
     pub fn contribute_direct(_ctx: Context<ContributeDirect>, amount: u64) -> Result<()> {

@@ -23,6 +23,7 @@ anchor-lang = "=1.2.0"
 anchor-spl = { version = "=1.2.0", default-features = false, features = ["token", "associated_token"] }
 
 [dev-dependencies]
+base64 = "=0.22.1"
 litesvm = "=0.10.0"
 solana-account = "=3.4.0"
 solana-keypair = "=3.1.2"

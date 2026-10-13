@@ -27,6 +27,16 @@ test("IDL exposes exactly the approved five interfaces and arguments", () => {
     const discriminator = createHash("sha256").update(`global:${ix.name}`).digest().subarray(0, 8);
     assert.deepEqual(Buffer.from(ix.discriminator), discriminator);
   }
+  const accounts: Record<string, string[]> = {
+    initialize_rider: ["rider", "rider_profile", "system_program"],
+    create_season: ["rider", "rider_profile", "season", "system_program"],
+    add_expense: ["rider", "rider_profile", "season", "expense", "system_program"],
+    sponsor_expense: ["merchant", "season", "expense", "sponsorship", "system_program"],
+    contribute_direct: ["fan", "rider_profile", "mock_usdc_mint", "fan_token_account", "rider_token_account", "token_program"],
+  };
+  for (const ix of idl.instructions) {
+    assert.deepEqual(ix.accounts.map((account: any) => account.name), accounts[ix.name]);
+  }
 });
 
 test("IDL account fields retain the four fixed-width layouts", () => {

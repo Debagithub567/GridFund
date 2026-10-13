@@ -1,6 +1,7 @@
 use crate::{
-    constants::{RIDER_SEED, SEASON_SEED},
+    constants::{RIDER_SEED, SEASON_ACTIVE, SEASON_SEED, V1_SEASON_ID},
     errors::GridSupportError,
+    events::SeasonCreated,
     state::{RiderProfile, Season},
 };
 use anchor_lang::prelude::*;
@@ -24,4 +25,27 @@ pub struct CreateSeason<'info> {
     )]
     pub season: Account<'info, Season>,
     pub system_program: Program<'info, System>,
+}
+
+pub(crate) fn handle(
+    ctx: Context<CreateSeason>,
+    budget_cents: u64,
+    title_hash: [u8; 32],
+) -> Result<()> {
+    require!(budget_cents > 0, GridSupportError::InvalidSeasonBudget);
+    let season = &mut ctx.accounts.season;
+    season.rider = ctx.accounts.rider.key();
+    season.season_id = V1_SEASON_ID;
+    season.budget_cents = budget_cents;
+    season.title_hash = title_hash;
+    season.status = SEASON_ACTIVE;
+    season.expense_count = 0;
+    season.bump = ctx.bumps.season;
+    emit!(SeasonCreated {
+        rider: season.rider,
+        season: season.key(),
+        season_id: season.season_id,
+        budget_cents,
+    });
+    Ok(())
 }

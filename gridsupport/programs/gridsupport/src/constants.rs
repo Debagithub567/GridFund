@@ -4,6 +4,8 @@ pub const RIDER_SEED: &[u8] = b"rider";
 pub const SEASON_SEED: &[u8] = b"season";
 pub const EXPENSE_SEED: &[u8] = b"expense";
 pub const SPONSORSHIP_SEED: &[u8] = b"sponsorship";
+pub const V1_SEASON_ID: u64 = 1;
+pub const SEASON_ACTIVE: u8 = 1;
 pub const MOCK_USDC_DECIMALS: u8 = 6;
 
 // None deliberately rejects every contribution until a dedicated Devnet mint is

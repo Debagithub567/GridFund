@@ -1,6 +1,7 @@
 use crate::{
-    constants::{EXPENSE_SEED, RIDER_SEED, SEASON_SEED},
+    constants::{EXPENSE_SEED, RIDER_SEED, SEASON_ACTIVE, SEASON_SEED},
     errors::GridSupportError,
+    events::ExpenseCreated,
     state::{Expense, RiderProfile, Season},
 };
 use anchor_lang::prelude::*;
@@ -31,4 +32,42 @@ pub struct AddExpense<'info> {
     )]
     pub expense: Account<'info, Expense>,
     pub system_program: Program<'info, System>,
+}
+
+pub(crate) fn handle(
+    ctx: Context<AddExpense>,
+    estimated_cost_cents: u64,
+    category: u8,
+    description_hash: [u8; 32],
+) -> Result<()> {
+    require!(
+        ctx.accounts.season.status == SEASON_ACTIVE,
+        GridSupportError::SeasonNotActive
+    );
+    require!(
+        estimated_cost_cents > 0,
+        GridSupportError::InvalidExpenseAmount
+    );
+    let expense_id = ctx.accounts.season.expense_count;
+    let next_count = super::next_count(expense_id)?;
+
+    let expense = &mut ctx.accounts.expense;
+    expense.season = ctx.accounts.season.key();
+    expense.expense_id = expense_id;
+    expense.estimated_cost_cents = estimated_cost_cents;
+    expense.committed_coverage_cents = 0;
+    expense.sponsorship_count = 0;
+    expense.category = category;
+    expense.description_hash = description_hash;
+    expense.bump = ctx.bumps.expense;
+    ctx.accounts.season.expense_count = next_count;
+
+    emit!(ExpenseCreated {
+        season: expense.season,
+        expense: expense.key(),
+        expense_id,
+        estimated_cost_cents,
+        category,
+    });
+    Ok(())
 }

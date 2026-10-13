@@ -1,41 +1,50 @@
-# Stage 1 implementation handoff
+# GridSupport V1 Stage 2 implementation handoff
 
-## Workspace and files
+## Workspace and preserved architecture
 
-The separate `gridsupport/` Anchor workspace contains one program, `gridsupport`. The pre-existing sibling `gridfund/` workspace was not modified. There were no tracked files in the repository before this work, and no commit or push was made.
+Work is in the existing `gridsupport/` Anchor workspace. The neighboring `gridfund/` workspace was not changed. The program still has exactly four account types and five public instructions, with the Stage 1 fields, PDA seeds, and allocations unchanged: RiderProfile 41, Season 98, Expense 106, Sponsorship 97 bytes, including discriminators. The existing `SponsorExpense` account list is sufficient: from the program-owned `season.rider` wallet, `canonical_season_address` derives the RiderProfile PDA and then the Season PDA. No additional read-only account or IDL account-interface change was needed.
 
-- Workspace: `Anchor.toml`, `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml`, `package.json`, `package-lock.json`, `tsconfig.json`, `.gitignore`.
-- Program: `programs/gridsupport/Cargo.toml`; `src/lib.rs`, `constants.rs`, `errors.rs`, `events.rs`; four files in `src/state/`; five files in `src/instructions/` and their `mod.rs` files.
-- Tests: `tests/architecture.spec.ts` and `programs/gridsupport/tests/structural.rs`; the account serialization unit test is in `src/state/mod.rs`.
-- Documentation: all six files in `docs/architecture/`, plus `scripts/README.md`.
+The local program ID remains `H98fSKptEE9rVR11K75GY5xdUkDk8bEGYsyjuosX9wVQ`. Its keypair and generated SBF/IDL artifacts are in ignored `target/`, so protect or replace the keypair before deployment and rebuild artifacts in a new checkout.
 
-The program ID `H98fSKptEE9rVR11K75GY5xdUkDk8bEGYsyjuosX9wVQ` was generated for this local workspace. Its keypair is ignored at `target/deploy/gridsupport-keypair.json`; protect or replace it before any deployment. Generated `target/idl/gridsupport.json` and `target/deploy/gridsupport.so` are also ignored and must be rebuilt in a new checkout.
+## Files changed for Stage 2
 
-## Architecture delivered
+- `programs/gridsupport/src/lib.rs`: routes four approved instructions to operational handlers; `contribute_direct` still returns `NotImplemented`.
+- `src/instructions/{initialize_rider,create_season,add_expense,sponsor_expense,mod}.rs`: initialization, sponsorship, active-status checks, checked arithmetic, event emission, and counter overflow helper.
+- `src/constants.rs`: names the fixed season ID and Active status values.
+- `src/errors.rs`: appends `InvalidSeasonBudget`, the only new error variant, because a zero season budget needs a specific failure. Appending preserves existing error codes.
+- `programs/gridsupport/Cargo.toml`: adds `base64` as a test-only dependency for event log verification.
+- `programs/gridsupport/tests/structural.rs`: replaces Stage 1 unimplemented-handler expectations with LiteSVM state-transition and security tests.
+- `tests/architecture.spec.ts`: checks the frozen account lists in the generated IDL.
+- `scripts/README.md`: records the Stage 2 test and build workflow.
+- `docs/architecture/{PROJECT_CONTEXT,PROTOCOL_SPEC,SECURITY_TEST_PLAN,OPEN_QUESTIONS,IMPLEMENTATION_HANDOFF}.md`: updates implementation status, validation, tests, and Stage 3 dependencies.
+- `Cargo.lock`: records the test dependency. Account state modules, events, token configuration, and `contribute_direct` constraints were not changed.
 
-Four fixed-width Anchor accounts have allocation constants and tested serialized sizes: RiderProfile 41, Season 98, Expense 106, Sponsorship 97 bytes. The five exact public instruction interfaces and their PDA, signer, owner, mint, token account, and ATA constraints compile. All handlers return `NotImplemented`; no account state transition, token transfer, or success event occurs. A failed `init` instruction rolls back its attempted account creation atomically.
+## Operational instructions
 
-There are five future event definitions and the specified error variants. `APPROVED_MOCK_USDC_MINT` is `None`, so every direct contribution is deliberately rejected before it could become operational. Standard SPL Token types and `Program<Token>` are used. For Anchor SPL 1.2.0 IDL generation, the `idl-build` feature enables `anchor-spl/token_2022` only to compile that dependency's IDL helper; the program uses no Token-2022 account or program.
+1. `initialize_rider`: Anchor requires the rider signer and initializes the canonical PDA; the handler stores wallet and bump, then emits `RiderInitialized`. A second initialization fails.
+2. `create_season`: requires the canonical RiderProfile owned by the signer and a positive budget; initializes the unique Season PDA with ID 1, Active status, supplied budget/hash, zero expense count, and bump; emits `SeasonCreated`.
+3. `add_expense`: requires the signer-owned canonical profile and Season, Active status, and positive estimated cost; initializes the PDA for the current expense count, stores supplied metadata with zero coverage/sponsorship count, increments the Season count using checked addition, and emits `ExpenseCreated`. The budget and sum of expenses remain independent.
+4. `sponsor_expense`: requires a merchant signer, canonical Season and Expense relationship, Active status, positive amount, available capacity, and checked arithmetic. It initializes one immutable Sponsorship PDA using the current expense sponsorship count, stores merchant wallet and Solana Clock timestamp, updates coverage/count, and emits `SponsorshipCreated`. The rider does not sign. This is an in-kind declaration; no tokens move.
 
-## Verification run on 2026-10-13
+All account creation and state updates are atomic at the transaction level. Failed attempts leave parent counters and coverage unchanged and create no Sponsorship account. No cancellation, rider acceptance, merchant profile, escrow, or fulfillment state was introduced.
+
+## Verification on 2026-10-13
 
 | Command | Actual result |
 | --- | --- |
 | `cargo fmt --all -- --check` | Passed. |
-| `cargo check --offline` | Passed. |
-| `cargo test --offline` | Passed: 1 Rust layout test and 3 LiteSVM structural transaction tests. |
+| `cargo check --offline` | Passed without warnings. |
+| `cargo test --offline` | Passed: 3 Rust unit tests plus 5 LiteSVM integration tests, 8 total. |
+| `anchor build --arch v0 --tools-version v1.54` | Passed. Generated IDL retains five instructions, four accounts, five events and now 20 error variants. |
 | `npm run typecheck` | Passed. |
-| `npm test` | Passed: 3 TypeScript IDL, layout, and PDA tests. |
-| `anchor build --arch v0 --tools-version v1.54` | Passed; generated a 192 KB SBF binary and IDL with exactly five instructions, four accounts, five events, and 19 error variants. |
-| `anchor build` | Failed in local `cargo-build-sbf` toolchain setup: `generate_toolchain_name` panicked because the default v1.57 platform-tools cache lacks `rust/bin/rustc`. Use the explicit v1.54 command above on this machine. |
+| `npm test` | Passed: 3 TypeScript IDL/layout/PDA tests. |
 
-The local LiteSVM runner rejected the default v3 SBF artifact with `Instruction(InvalidAccountData)` at load time; the v0 build loads and all structural tests pass. This is a local test-toolchain compatibility finding, not a program transaction failure. The earlier TypeScript `tsx --test` launcher also failed because the sandbox disallowed its IPC pipe; `node --import tsx --test` is the working script.
+The five LiteSVM tests execute actual SBF transactions for the Racer → Shop path. They cover duplicate and wrong PDA rejection, wrong program ownership, unauthorized relationships, zero values, sequential IDs, the €150 expense with €5 then €2 from the same merchant, a second merchant, exact remaining coverage, full-expense rejection, failed-operation atomicity, inactive Season, `u64::MAX` coverage overflow, and all four emitted event values. Unit tests cover fixed allocations, counter overflow, and sponsorship coverage boundaries. Invalid merchant signature is checked at transaction construction because the signed message requires that signature.
 
-## Stage 2 work, after approval
+The local default `anchor build` toolchain v1.57 cache remains incomplete; use the explicit v1.54/v0 command. The local LiteSVM version loads the v0 artifact. Neither a Devnet deployment nor a security audit was performed.
 
-1. Implement initialization of profile, season, and expense fields with the specified IDs, active status, zero counters, bumps, positive expense cost, and events.
-2. Implement sponsorship creation as an in-kind declaration. Check active Season, positive amount, remaining capacity, and checked addition for coverage and counters. Record merchant and timestamp; emit the event. Do not transfer tokens or add a rider approval step.
-3. Create and verify a dedicated six-decimal Devnet standard SPL mock-USDC mint outside this program. Pin the verified address as `Some(pubkey!(...))`, rebuild, then implement direct `transfer_checked`, positive amount enforcement, and the event. Do not add a receipt PDA, faucet, or minting instruction.
-4. Add the deferred behavior and security tests listed in `SECURITY_TEST_PLAN.md`. Keep simulated merchant coverage entirely in frontend state and separate euro-cent coverage from token amounts.
+## Stage 3 readiness and dependencies
 
-No deployment, mint creation, wallet funding, frontend, or later-stage business logic was performed. Passing tests and builds do not constitute a security audit.
+`contribute_direct` is still non-operational and does not emit `DirectContribution`. `APPROVED_MOCK_USDC_MINT` remains `None`, which rejects arbitrary mints. Stage 3 needs a dedicated six-decimal Devnet standard SPL mint, a verified and pinned address, token account fixtures, and `transfer_checked` implementation and tests. It must keep mock-USDC token amounts separate from euro-cent in-kind sponsorship coverage. Do not create a donation receipt PDA or token escrow.
+
+No commit or push was made. Stop here until Stage 3 is explicitly authorized.

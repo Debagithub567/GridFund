@@ -40,4 +40,6 @@ pub enum GridSupportError {
     InvalidTokenProgram,
     #[msg("Contribution amount must be positive")]
     InvalidContributionAmount,
+    #[msg("Season budget must be positive")]
+    InvalidSeasonBudget,
 }

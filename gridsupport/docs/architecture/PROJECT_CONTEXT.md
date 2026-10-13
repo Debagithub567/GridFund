@@ -6,5 +6,5 @@ The five demo scenes are: introduce the rider and season; show the expense gap; 
 
 In-kind commitments are euro cents of promised goods or services. They are not payments and do not prove delivery. Fan contributions are actual SPL token amounts in six-decimal mock USDC. Never sum, convert, or label these as one financial total.
 
-Current stage: account layouts, interfaces, structural validation, events, errors, documentation, and tests. Every public handler returns `NotImplemented`; no successful business transaction exists yet. Affiliate shopping, promotional obligations, merchant profiles, escrow, fulfillment, NFT badges, fiat payments, real voice recognition, and multiplier or celebration animation are outside V1 onchain scope.
+Current stage: the Racer → Shop onchain path is operational. A rider can create a profile, create the one V1 season, add expenses, and merchants can record permanent in-kind sponsorship declarations. Fan token contributions remain unimplemented. Affiliate shopping, promotional obligations, merchant profiles, escrow, fulfillment, NFT badges, fiat payments, real voice recognition, and multiplier or celebration animation are outside V1 onchain scope.
 
