@@ -1,50 +1,40 @@
-# GridSupport V1 Stage 2 implementation handoff
+# GridSupport V1 Stage 3 implementation handoff
 
-## Workspace and preserved architecture
+## Scope and files
 
-Work is in the existing `gridsupport/` Anchor workspace. The neighboring `gridfund/` workspace was not changed. The program still has exactly four account types and five public instructions, with the Stage 1 fields, PDA seeds, and allocations unchanged: RiderProfile 41, Season 98, Expense 106, Sponsorship 97 bytes, including discriminators. The existing `SponsorExpense` account list is sufficient: from the program-owned `season.rider` wallet, `canonical_season_address` derives the RiderProfile PDA and then the Season PDA. No additional read-only account or IDL account-interface change was needed.
+Stage 3 is implemented in the existing `gridsupport/` workspace. The neighboring `gridfund/` workspace was not touched. No commit, push, Devnet mint, deployment, or frontend work was performed.
 
-The local program ID remains `H98fSKptEE9rVR11K75GY5xdUkDk8bEGYsyjuosX9wVQ`. Its keypair and generated SBF/IDL artifacts are in ignored `target/`, so protect or replace the keypair before deployment and rebuild artifacts in a new checkout.
+Changed program files: `programs/gridsupport/Cargo.toml`, `src/constants.rs`, `src/lib.rs`, `src/instructions/contribute_direct.rs`, and new `tests/contributions.rs`. Changed docs: `PROJECT_CONTEXT.md`, `PROTOCOL_SPEC.md`, `SECURITY_TEST_PLAN.md`, `OPEN_QUESTIONS.md`, this handoff, `MOCK_USDC_SETUP.md`, and `scripts/README.md`. No dependency or custom account layout was changed.
 
-## Files changed for Stage 2
+## Onchain behavior
 
-- `programs/gridsupport/src/lib.rs`: routes four approved instructions to operational handlers; `contribute_direct` still returns `NotImplemented`.
-- `src/instructions/{initialize_rider,create_season,add_expense,sponsor_expense,mod}.rs`: initialization, sponsorship, active-status checks, checked arithmetic, event emission, and counter overflow helper.
-- `src/constants.rs`: names the fixed season ID and Active status values.
-- `src/errors.rs`: appends `InvalidSeasonBudget`, the only new error variant, because a zero season budget needs a specific failure. Appending preserves existing error codes.
-- `programs/gridsupport/Cargo.toml`: adds `base64` as a test-only dependency for event log verification.
-- `programs/gridsupport/tests/structural.rs`: replaces Stage 1 unimplemented-handler expectations with LiteSVM state-transition and security tests.
-- `tests/architecture.spec.ts`: checks the frozen account lists in the generated IDL.
-- `scripts/README.md`: records the Stage 2 test and build workflow.
-- `docs/architecture/{PROJECT_CONTEXT,PROTOCOL_SPEC,SECURITY_TEST_PLAN,OPEN_QUESTIONS,IMPLEMENTATION_HANDOFF}.md`: updates implementation status, validation, tests, and Stage 3 dependencies.
-- `Cargo.lock`: records the test dependency. Account state modules, events, token configuration, and `contribute_direct` constraints were not changed.
+`contribute_direct(amount)` now calls the standard SPL Token `transfer_checked` CPI. The fan signer is the transfer authority. Anchor enforces the canonical program-owned RiderProfile PDA; an approved mint address, six decimals, and standard Token program ownership; source token owner = fan and source mint = approved mint; destination token owner = stored rider, destination mint = approved mint, and destination address = the rider's canonical standard SPL ATA. `amount` must be positive and is in token base units. The CPI transfers directly from fan to rider, with no escrow, fee, minting, burn, SOL transfer, or sponsorship coverage change. `DirectContribution(fan, rider, mint, amount)` is emitted only after the CPI succeeds. A failed transaction rolls back token movement and emits no successful contribution event.
 
-## Operational instructions
+The four existing custom accounts and PDA seeds are unchanged: RiderProfile 41 bytes, Season 98 bytes, Expense 106 bytes, Sponsorship 97 bytes. The IDL still has five public instructions, four custom accounts, and five events. The four Stage 2 operational instructions continue to work.
 
-1. `initialize_rider`: Anchor requires the rider signer and initializes the canonical PDA; the handler stores wallet and bump, then emits `RiderInitialized`. A second initialization fails.
-2. `create_season`: requires the canonical RiderProfile owned by the signer and a positive budget; initializes the unique Season PDA with ID 1, Active status, supplied budget/hash, zero expense count, and bump; emits `SeasonCreated`.
-3. `add_expense`: requires the signer-owned canonical profile and Season, Active status, and positive estimated cost; initializes the PDA for the current expense count, stores supplied metadata with zero coverage/sponsorship count, increments the Season count using checked addition, and emits `ExpenseCreated`. The budget and sum of expenses remain independent.
-4. `sponsor_expense`: requires a merchant signer, canonical Season and Expense relationship, Active status, positive amount, available capacity, and checked arithmetic. It initializes one immutable Sponsorship PDA using the current expense sponsorship count, stores merchant wallet and Solana Clock timestamp, updates coverage/count, and emits `SponsorshipCreated`. The rider does not sign. This is an in-kind declaration; no tokens move.
+## Mint configuration
 
-All account creation and state updates are atomic at the transaction level. Failed attempts leave parent counters and coverage unchanged and create no Sponsorship account. No cancellation, rider acceptance, merchant profile, escrow, or fulfillment state was introduced.
+The default build pins `APPROVED_MOCK_USDC_MINT = None`, deliberately rejecting every mint. The explicit `local-test-mint` Cargo feature pins `[77; 32]`; LiteSVM backs this address with a six-decimal standard SPL Mint account and funded token accounts. The local fixture is not a Devnet mint. Build with the feature only for local contribution tests. Rebuild without it before reviewing any deployable artifact.
+
+No verified Devnet mint was present in configuration and none was created. `MOCK_USDC_SETUP.md` gives exact operator CLI commands, required signer, verification steps, approximate rent and fee budget, and a release gate. A verified dedicated Devnet mint must be created with explicit approval, pinned in the default constant, reviewed, rebuilt, tested, and deployed before Devnet contributions can work. Never substitute real USDC or deploy a local-feature binary.
 
 ## Verification on 2026-10-13
 
 | Command | Actual result |
 | --- | --- |
+| `anchor build --arch v0 --tools-version v1.54 -- --features local-test-mint` | Passed; produced the local-test SBF artifact. |
+| `cargo test --offline --features local-test-mint` | Passed: 3 Rust unit, 6 contribution integration, and 5 Stage 2 integration tests (14 total). |
 | `cargo fmt --all -- --check` | Passed. |
-| `cargo check --offline` | Passed without warnings. |
-| `cargo test --offline` | Passed: 3 Rust unit tests plus 5 LiteSVM integration tests, 8 total. |
-| `anchor build --arch v0 --tools-version v1.54` | Passed. Generated IDL retains five instructions, four accounts, five events and now 20 error variants. |
+| `cargo check --offline` | Passed. |
+| `anchor build --arch v0 --tools-version v1.54` | Passed; restored the default fail-closed SBF artifact. |
+| `cargo test --offline` | Passed: 3 Rust unit and 5 Stage 2 integration tests (8 total); feature-gated contribution tests do not run in the default configuration. |
 | `npm run typecheck` | Passed. |
-| `npm test` | Passed: 3 TypeScript IDL/layout/PDA tests. |
+| `npm test` | Passed: 3 IDL/layout/PDA tests. |
 
-The five LiteSVM tests execute actual SBF transactions for the Racer → Shop path. They cover duplicate and wrong PDA rejection, wrong program ownership, unauthorized relationships, zero values, sequential IDs, the €150 expense with €5 then €2 from the same merchant, a second merchant, exact remaining coverage, full-expense rejection, failed-operation atomicity, inactive Season, `u64::MAX` coverage overflow, and all four emitted event values. Unit tests cover fixed allocations, counter overflow, and sponsorship coverage boundaries. Invalid merchant signature is checked at transaction construction because the signed message requires that signature.
+The six contribution tests cover an exact 2,000,000-unit transfer, balance and supply checks, event fields, existing sponsorship state, multiple fans, wrong amount/mint/decimals/program/owner/account/ATA/profile, insufficient funds, missing signature, invalid serialization, and failure atomicity. The missing-signature check fails transaction construction because the message requires the fan signature. No failed or skipped enabled tests remain. The default build intentionally skips the feature-gated contribution suite.
 
-The local default `anchor build` toolchain v1.57 cache remains incomplete; use the explicit v1.54/v0 command. The local LiteSVM version loads the v0 artifact. Neither a Devnet deployment nor a security audit was performed.
+## Stage 4 handoff and remaining gate
 
-## Stage 3 readiness and dependencies
+Stage 4 can consume the existing IDL and confirmed transaction signature to show immediate fan recognition. The frontend must derive the rider's canonical ATA for the pinned mint and standard Token program, display mock-USDC base units as six-decimal demo tokens, and keep them separate from euro-cent in-kind sponsorship coverage. Event logs alone do not provide verified lifetime donation totals; that needs indexing or another explicit data source. No frontend was implemented here.
 
-`contribute_direct` is still non-operational and does not emit `DirectContribution`. `APPROVED_MOCK_USDC_MINT` remains `None`, which rejects arbitrary mints. Stage 3 needs a dedicated six-decimal Devnet standard SPL mint, a verified and pinned address, token account fixtures, and `transfer_checked` implementation and tests. It must keep mock-USDC token amounts separate from euro-cent in-kind sponsorship coverage. Do not create a donation receipt PDA or token escrow.
-
-No commit or push was made. Stop here until Stage 3 is explicitly authorized.
+Devnet readiness remains blocked by creation and independent verification of a dedicated mint, pinning its real address in the default build, choosing/protecting the Devnet program keypair, reviewing the default artifact, and an authorized Devnet deployment and transaction check. Local-test readiness is complete. Stop after Stage 3; Stage 4 requires explicit authorization.

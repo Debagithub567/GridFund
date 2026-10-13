@@ -8,8 +8,14 @@ pub const V1_SEASON_ID: u64 = 1;
 pub const SEASON_ACTIVE: u8 = 1;
 pub const MOCK_USDC_DECIMALS: u8 = 6;
 
-// None deliberately rejects every contribution until a dedicated Devnet mint is
-// created, reviewed, and pinned here. Never substitute a public stablecoin mint.
+// This local-only address is backed by a standard SPL Mint account in LiteSVM.
+// Never deploy a binary built with local-test-mint to Devnet.
+#[cfg(feature = "local-test-mint")]
+pub const APPROVED_MOCK_USDC_MINT: Option<Pubkey> = Some(Pubkey::new_from_array([77; 32]));
+
+// A default build deliberately rejects all contributions until an independently
+// verified dedicated Devnet mint is pinned here. Never use a public USDC mint.
+#[cfg(not(feature = "local-test-mint"))]
 pub const APPROVED_MOCK_USDC_MINT: Option<Pubkey> = None;
 
 pub fn canonical_season_address(rider: &Pubkey) -> Pubkey {

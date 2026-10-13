@@ -1,12 +1,13 @@
 use crate::{
     constants::{APPROVED_MOCK_USDC_MINT, MOCK_USDC_DECIMALS, RIDER_SEED},
     errors::GridSupportError,
+    events::DirectContribution,
     state::RiderProfile,
 };
 use anchor_lang::prelude::*;
 use anchor_spl::{
     associated_token::get_associated_token_address,
-    token::{Mint, Token, TokenAccount},
+    token::{transfer_checked, Mint, Token, TokenAccount, TransferChecked},
 };
 
 #[derive(Accounts)]
@@ -38,4 +39,25 @@ pub struct ContributeDirect<'info> {
     )]
     pub rider_token_account: Account<'info, TokenAccount>,
     pub token_program: Program<'info, Token>,
+}
+
+pub fn handle(ctx: Context<ContributeDirect>, amount: u64) -> Result<()> {
+    let transfer = TransferChecked {
+        from: ctx.accounts.fan_token_account.to_account_info(),
+        mint: ctx.accounts.mock_usdc_mint.to_account_info(),
+        to: ctx.accounts.rider_token_account.to_account_info(),
+        authority: ctx.accounts.fan.to_account_info(),
+    };
+    transfer_checked(
+        CpiContext::new(ctx.accounts.token_program.key(), transfer),
+        amount,
+        MOCK_USDC_DECIMALS,
+    )?;
+    emit!(DirectContribution {
+        fan: ctx.accounts.fan.key(),
+        rider: ctx.accounts.rider_profile.rider,
+        mint: ctx.accounts.mock_usdc_mint.key(),
+        amount,
+    });
+    Ok(())
 }

@@ -38,8 +38,7 @@ pub mod gridsupport {
         instructions::sponsor_expense::handle(ctx, amount_cents)
     }
 
-    pub fn contribute_direct(_ctx: Context<ContributeDirect>, amount: u64) -> Result<()> {
-        let _ = amount;
-        Err(errors::GridSupportError::NotImplemented.into())
+    pub fn contribute_direct(ctx: Context<ContributeDirect>, amount: u64) -> Result<()> {
+        instructions::contribute_direct::handle(ctx, amount)
     }
 }

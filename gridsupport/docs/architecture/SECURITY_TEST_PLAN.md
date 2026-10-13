@@ -9,10 +9,10 @@
 - The same transaction tests decode Anchor event logs and compare all four successful event schemas and values. Failed business instructions must have no emitted success event.
 - Isolated Rust unit tests cover fixed-width serialization, counter overflow, and sponsorship coverage boundaries/overflow.
 
-## Stage 3 behavior tests to implement later
+## Stage 3 executable checks
 
-- Use a pinned six-decimal dedicated Devnet or local test mint: contribute 2 mock USDC (2,000,000 base units), verify `transfer_checked` balances and `DirectContribution` event. Reject wrong mint, decimals, token program, source owner, source mint, wrong rider ATA, insufficient balance, and zero amount. Ensure no donation receipt PDA appears.
-- Verify simulated sponsorships never create transactions or appear in verified coverage; euro cents and token units stay separate in UI calculations.
-
-The Stage 3 cases are specifications, not passing Stage 2 tests. A passing build or test suite is not a security audit.
+- `cargo test --offline --features local-test-mint` loads the local-feature SBF binary in LiteSVM, which contains the standard SPL Token program. A real `transfer_checked` CPI moves 2,000,000 base units; source and destination balances, unchanged mint supply, exact `DirectContribution` fields, unchanged profile/season/expense/sponsorship state, and no new receipt PDA are checked.
+- Isolated fixtures reject zero amount, insufficient balance, wrong pinned mint, wrong decimals, wrong mint owner, wrong token program, source owner/mint/program, destination owner/mint/program, another wallet's ATA, a noncanonical rider token account, forged profile, and invalid source serialization. Each failed transaction leaves both token account data unchanged and emits no successful contribution event. A missing fan signature fails transaction construction.
+- Three successful transfers by two fans verify independent events, accumulated rider balance, and no rider receiving signature. The original Stage 2 LiteSVM tests run again under the local feature and default build.
+- Frontend indexing and presentation of historical donations remain for Stage 4. An event log alone is not a permanent donation aggregate. Passing local tests is not a security audit or Devnet verification.
 

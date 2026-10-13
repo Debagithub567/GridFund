@@ -10,6 +10,7 @@ name = "gridsupport"
 
 [features]
 default = []
+local-test-mint = []
 cpi = ["no-entrypoint"]
 no-entrypoint = []
 no-log-ix-name = []
