@@ -1,0 +1,892 @@
+{
+  "address": "H98fSKptEE9rVR11K75GY5xdUkDk8bEGYsyjuosX9wVQ",
+  "metadata": {
+    "name": "gridsupport",
+    "version": "0.1.0",
+    "spec": "0.1.0"
+  },
+  "instructions": [
+    {
+      "name": "add_expense",
+      "discriminator": [
+        171,
+        23,
+        8,
+        240,
+        62,
+        31,
+        254,
+        144
+      ],
+      "accounts": [
+        {
+          "name": "rider",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "rider_profile",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  100,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "rider"
+              }
+            ]
+          }
+        },
+        {
+          "name": "season",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  101,
+                  97,
+                  115,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "rider_profile"
+              }
+            ]
+          }
+        },
+        {
+          "name": "expense",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  120,
+                  112,
+                  101,
+                  110,
+                  115,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "season"
+              },
+              {
+                "kind": "account",
+                "path": "season.expense_count",
+                "account": "Season"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "estimated_cost_cents",
+          "type": "u64"
+        },
+        {
+          "name": "category",
+          "type": "u8"
+        },
+        {
+          "name": "description_hash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "contribute_direct",
+      "discriminator": [
+        123,
+        85,
+        52,
+        210,
+        34,
+        70,
+        211,
+        182
+      ],
+      "accounts": [
+        {
+          "name": "fan",
+          "signer": true
+        },
+        {
+          "name": "rider_profile",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  100,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "rider_profile.rider",
+                "account": "RiderProfile"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mock_usdc_mint"
+        },
+        {
+          "name": "fan_token_account",
+          "writable": true
+        },
+        {
+          "name": "rider_token_account",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "create_season",
+      "discriminator": [
+        38,
+        108,
+        29,
+        127,
+        60,
+        126,
+        101,
+        3
+      ],
+      "accounts": [
+        {
+          "name": "rider",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "rider_profile",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  100,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "rider"
+              }
+            ]
+          }
+        },
+        {
+          "name": "season",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  101,
+                  97,
+                  115,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "rider_profile"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "budget_cents",
+          "type": "u64"
+        },
+        {
+          "name": "title_hash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "initialize_rider",
+      "discriminator": [
+        25,
+        156,
+        215,
+        47,
+        4,
+        112,
+        8,
+        198
+      ],
+      "accounts": [
+        {
+          "name": "rider",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "rider_profile",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  105,
+                  100,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "rider"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "sponsor_expense",
+      "discriminator": [
+        30,
+        124,
+        30,
+        182,
+        251,
+        83,
+        225,
+        81
+      ],
+      "accounts": [
+        {
+          "name": "merchant",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "season"
+        },
+        {
+          "name": "expense",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  120,
+                  112,
+                  101,
+                  110,
+                  115,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "season"
+              },
+              {
+                "kind": "account",
+                "path": "expense.expense_id",
+                "account": "Expense"
+              }
+            ]
+          }
+        },
+        {
+          "name": "sponsorship",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  112,
+                  111,
+                  110,
+                  115,
+                  111,
+                  114,
+                  115,
+                  104,
+                  105,
+                  112
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "expense"
+              },
+              {
+                "kind": "account",
+                "path": "expense.sponsorship_count",
+                "account": "Expense"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount_cents",
+          "type": "u64"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Expense",
+      "discriminator": [
+        49,
+        167,
+        206,
+        160,
+        209,
+        254,
+        24,
+        100
+      ]
+    },
+    {
+      "name": "RiderProfile",
+      "discriminator": [
+        65,
+        122,
+        118,
+        216,
+        124,
+        74,
+        229,
+        218
+      ]
+    },
+    {
+      "name": "Season",
+      "discriminator": [
+        76,
+        67,
+        93,
+        156,
+        180,
+        157,
+        248,
+        47
+      ]
+    },
+    {
+      "name": "Sponsorship",
+      "discriminator": [
+        191,
+        110,
+        48,
+        7,
+        9,
+        44,
+        168,
+        248
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "DirectContribution",
+      "discriminator": [
+        34,
+        229,
+        37,
+        174,
+        54,
+        196,
+        235,
+        84
+      ]
+    },
+    {
+      "name": "ExpenseCreated",
+      "discriminator": [
+        79,
+        218,
+        230,
+        237,
+        5,
+        12,
+        150,
+        71
+      ]
+    },
+    {
+      "name": "RiderInitialized",
+      "discriminator": [
+        142,
+        106,
+        99,
+        32,
+        132,
+        150,
+        136,
+        185
+      ]
+    },
+    {
+      "name": "SeasonCreated",
+      "discriminator": [
+        69,
+        129,
+        125,
+        162,
+        208,
+        173,
+        40,
+        68
+      ]
+    },
+    {
+      "name": "SponsorshipCreated",
+      "discriminator": [
+        65,
+        136,
+        14,
+        91,
+        51,
+        0,
+        123,
+        238
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "NotImplemented",
+      "msg": "Instruction is reserved for a later implementation stage"
+    },
+    {
+      "code": 6001,
+      "name": "UnauthorizedRider",
+      "msg": "Only the rider may perform this action"
+    },
+    {
+      "code": 6002,
+      "name": "InvalidRiderProfile",
+      "msg": "Invalid rider profile"
+    },
+    {
+      "code": 6003,
+      "name": "InvalidSeason",
+      "msg": "Invalid season"
+    },
+    {
+      "code": 6004,
+      "name": "SeasonNotActive",
+      "msg": "Season is not active"
+    },
+    {
+      "code": 6005,
+      "name": "InvalidExpense",
+      "msg": "Invalid expense"
+    },
+    {
+      "code": 6006,
+      "name": "InvalidExpenseAmount",
+      "msg": "Expense amount must be positive"
+    },
+    {
+      "code": 6007,
+      "name": "InvalidSponsorshipAmount",
+      "msg": "Sponsorship amount must be positive"
+    },
+    {
+      "code": 6008,
+      "name": "ExpenseFullyCovered",
+      "msg": "Expense is fully covered"
+    },
+    {
+      "code": 6009,
+      "name": "CoverageExceeded",
+      "msg": "Sponsorship exceeds remaining expense coverage"
+    },
+    {
+      "code": 6010,
+      "name": "ArithmeticOverflow",
+      "msg": "Arithmetic overflow"
+    },
+    {
+      "code": 6011,
+      "name": "InvalidMerchant",
+      "msg": "Invalid merchant signer"
+    },
+    {
+      "code": 6012,
+      "name": "InvalidMockUsdcMint",
+      "msg": "Mock USDC mint is not the approved mint or is not configured"
+    },
+    {
+      "code": 6013,
+      "name": "InvalidMintDecimals",
+      "msg": "Mock USDC mint must have six decimals"
+    },
+    {
+      "code": 6014,
+      "name": "InvalidTokenAccountOwner",
+      "msg": "Token account has the wrong owner"
+    },
+    {
+      "code": 6015,
+      "name": "InvalidTokenAccountMint",
+      "msg": "Token account has the wrong mint"
+    },
+    {
+      "code": 6016,
+      "name": "InvalidRecipientTokenAccount",
+      "msg": "Recipient must be the rider's canonical associated token account"
+    },
+    {
+      "code": 6017,
+      "name": "InvalidTokenProgram",
+      "msg": "Only the standard SPL Token program is allowed"
+    },
+    {
+      "code": 6018,
+      "name": "InvalidContributionAmount",
+      "msg": "Contribution amount must be positive"
+    },
+    {
+      "code": 6019,
+      "name": "InvalidSeasonBudget",
+      "msg": "Season budget must be positive"
+    }
+  ],
+  "types": [
+    {
+      "name": "DirectContribution",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "fan",
+            "type": "pubkey"
+          },
+          {
+            "name": "rider",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Expense",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "season",
+            "type": "pubkey"
+          },
+          {
+            "name": "expense_id",
+            "type": "u64"
+          },
+          {
+            "name": "estimated_cost_cents",
+            "type": "u64"
+          },
+          {
+            "name": "committed_coverage_cents",
+            "type": "u64"
+          },
+          {
+            "name": "sponsorship_count",
+            "type": "u64"
+          },
+          {
+            "name": "category",
+            "type": "u8"
+          },
+          {
+            "name": "description_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ExpenseCreated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "season",
+            "type": "pubkey"
+          },
+          {
+            "name": "expense",
+            "type": "pubkey"
+          },
+          {
+            "name": "expense_id",
+            "type": "u64"
+          },
+          {
+            "name": "estimated_cost_cents",
+            "type": "u64"
+          },
+          {
+            "name": "category",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RiderInitialized",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "rider",
+            "type": "pubkey"
+          },
+          {
+            "name": "rider_profile",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RiderProfile",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "rider",
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Season",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "rider",
+            "type": "pubkey"
+          },
+          {
+            "name": "season_id",
+            "type": "u64"
+          },
+          {
+            "name": "budget_cents",
+            "type": "u64"
+          },
+          {
+            "name": "title_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "status",
+            "type": "u8"
+          },
+          {
+            "name": "expense_count",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SeasonCreated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "rider",
+            "type": "pubkey"
+          },
+          {
+            "name": "season",
+            "type": "pubkey"
+          },
+          {
+            "name": "season_id",
+            "type": "u64"
+          },
+          {
+            "name": "budget_cents",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Sponsorship",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "expense",
+            "type": "pubkey"
+          },
+          {
+            "name": "merchant",
+            "type": "pubkey"
+          },
+          {
+            "name": "sponsorship_id",
+            "type": "u64"
+          },
+          {
+            "name": "amount_cents",
+            "type": "u64"
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SponsorshipCreated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "expense",
+            "type": "pubkey"
+          },
+          {
+            "name": "sponsorship",
+            "type": "pubkey"
+          },
+          {
+            "name": "merchant",
+            "type": "pubkey"
+          },
+          {
+            "name": "sponsorship_id",
+            "type": "u64"
+          },
+          {
+            "name": "amount_cents",
+            "type": "u64"
+          }
+        ]
+      }
+    }
+  ]
+}

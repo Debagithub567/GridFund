@@ -1,0 +1,34 @@
+{
+  "name": "gridsupport-cinematic",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc --noEmit && vite build",
+    "test": "node --test tests/model.test.mjs tests/impact-ui.test.mjs && node --import tsx --test tests/chain.test.mjs tests/rider-transactions.test.mjs",
+    "test:local-validator": "node --import tsx --test tests/local-validator.test.mjs"
+  },
+  "dependencies": {
+    "@anchor-lang/core": "^1.2.0",
+    "@solana/wallet-adapter-base": "^0.9.28",
+    "@solana/wallet-adapter-phantom": "^0.9.30",
+    "@solana/wallet-adapter-react": "^0.15.40",
+    "@solana/web3.js": "^1.99.0",
+    "framer-motion": "^12.0.0",
+    "lucide-react": "^1.31.0",
+    "react": "19.2.6",
+    "react-dom": "19.2.6"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.2.1",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.2",
+    "jsdom": "^26.1.0",
+    "tailwindcss": "4.2.1",
+    "tsx": "^4.23.15",
+    "typescript": "5.9.3",
+    "vite": "8.0.13"
+  }
+}
