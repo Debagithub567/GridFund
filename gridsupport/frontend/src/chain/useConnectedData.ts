@@ -4,7 +4,7 @@ import {PublicKey} from '@solana/web3.js';
 import type {DemoState} from '../model';
 import {fetchRiderSnapshot, snapshotToViewState} from './accounts';
 import type {ChainSnapshot} from './accounts';
-import {cluster, configuredRider} from './config';
+import {cluster} from './config';
 import {createGridProgram} from './program';
 import {addExpense, createSeason, initializeRider} from './riderTransactions';
 import type {RiderAction, RiderProgress, RiderTransactionResult} from './riderTransactions';
@@ -12,6 +12,8 @@ import {sponsorExpense} from './merchantTransactions';
 import type {MerchantProgress, MerchantTransactionResult} from './merchantTransactions';
 import {contributeDirect, fetchTokenBalances, approvedMockMint} from './fanTransactions';
 import type {FanProgress, FanTransactionResult, TokenBalances} from './fanTransactions';
+import {directoryEntry, discoverRiderDirectory} from './riderDirectory';
+import type {DirectoryRider} from './riderDirectory';
 import {saveExpenseMetadata, saveSeasonMetadata, verifiedExpenseMetadata, verifiedSeasonTitle} from './metadata';
 import type {VerifiedMetadata} from './metadata';
 
@@ -25,9 +27,12 @@ export type IntegrationView = {
   snapshot: ChainSnapshot | null;
   status: ReadStatus;
   error: string;
-  riderInput: string;
-  setRiderInput: (value: string) => void;
-  loadRider: () => void;
+  directory: DirectoryRider[];
+  directoryStatus: 'idle' | 'loading' | 'ready' | 'error';
+  directoryError: string;
+  selectedRiderAddress: string;
+  selectRider: (address: string) => void;
+  refreshDirectory: () => void;
   selectedExpenseId: string;
   selectExpense: (id: string) => void;
   refresh: () => void;
@@ -54,10 +59,15 @@ export function useConnectedData(role: string): IntegrationView {
     try { return localStorage.getItem(MODE_KEY) === 'connected' ? 'connected' : 'demo'; }
     catch { return 'demo'; }
   });
-  const [riderInput, setRiderInput] = useState(configuredRider);
-  const [targetRider, setTargetRider] = useState(configuredRider);
+  const [targetRider, setTargetRider] = useState('');
+  const [directory, setDirectory] = useState<DirectoryRider[]>([]);
+  const [directoryStatus, setDirectoryStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [directoryError, setDirectoryError] = useState('');
+  const [directoryIdentity, setDirectoryIdentity] = useState('');
+  const [directoryRevision, setDirectoryRevision] = useState(0);
   const [selectedExpenseId, selectExpense] = useState('');
   const [snapshot, setSnapshot] = useState<ChainSnapshot | null>(null);
+  const [snapshotWallet, setSnapshotWallet] = useState('');
   const [metadata, setMetadata] = useState<VerifiedMetadata>({expenses: {}});
   const [tokenBalances, setTokenBalances] = useState<TokenBalances | null>(null);
   const [tokenError, setTokenError] = useState('');
@@ -72,9 +82,23 @@ export function useConnectedData(role: string): IntegrationView {
   const requestedRider = role === 'racer' ? walletAddress : targetRider;
   const currentRider = useRef(requestedRider);
   currentRider.current = requestedRider;
+  const identity = `${role}:${walletAddress}`;
+  const visibleDirectory = directoryIdentity === identity ? directory : [];
 
   const setMode = useCallback((next: DataMode) => setModeState(next), []);
-  const refresh = useCallback(() => setRevision(value => value + 1), []);
+  const refresh = useCallback(() => {
+    setRevision(value => value + 1);
+    if (role !== 'racer') setDirectoryRevision(value => value + 1);
+  }, [role]);
+  const refreshDirectory = refresh;
+  const selectRider = useCallback((address: string) => {
+    if (directoryIdentity !== identity || !directory.some(entry => entry.rider.toBase58() === address)) return;
+    setTargetRider(address);
+    setSnapshot(null);
+    setMetadata({expenses: {}});
+    setTokenBalances(null);
+    setRevision(value => value + 1);
+  }, [directoryIdentity, identity, directory]);
   const readMetadata = useCallback(async (data: ChainSnapshot): Promise<VerifiedMetadata> => {
     const expenses = Object.fromEntries((await Promise.all(data.expenses.map(async expense => [
       expense.address.toBase58(), await verifiedExpenseMetadata(expense.address.toBase58(), expense.descriptionHash, expense.category),
@@ -113,6 +137,7 @@ export function useConnectedData(role: string): IntegrationView {
       }
       setMetadata(nextMetadata);
       setSnapshot(result.snapshot);
+      setSnapshotWallet(ownerAddress);
       setStatus('ready');
       setError('');
       onProgress({stage: 'confirmed', signature: result.signature});
@@ -128,7 +153,9 @@ export function useConnectedData(role: string): IntegrationView {
     if (mode !== 'connected' || role !== 'shop' || !publicKey || !anchorWallet) {
       throw new Error('Connect a merchant wallet before recording an in-kind sponsorship.');
     }
-    if (status !== 'ready' || !snapshot || snapshot.rider.toBase58() !== currentRider.current ||
+    if (status !== 'ready' || directoryStatus !== 'ready' || directoryIdentity !== identity ||
+      snapshotWallet !== walletAddress || !snapshot || snapshot.rider.toBase58() !== currentRider.current ||
+      !directory.some(entry => entry.rider.equals(snapshot.rider)) ||
       !snapshot.expenses.some(expense => expense.address.toBase58() === expenseId)) {
       throw new Error('Load a rider and select one of their on-chain expenses.');
     }
@@ -151,6 +178,10 @@ export function useConnectedData(role: string): IntegrationView {
       }
       setMetadata(nextMetadata);
       setSnapshot(result.snapshot);
+      setSnapshotWallet(merchantAddress);
+      setDirectory(current => current.map((entry, index) => entry.rider.equals(result.snapshot.rider)
+        ? directoryEntry(result.snapshot, index, entry.seasonTitle) : entry));
+      setDirectoryRevision(value => value + 1);
       setStatus('ready');
       setError('');
       onProgress({stage: 'confirmed', signature: result.signature});
@@ -162,13 +193,16 @@ export function useConnectedData(role: string): IntegrationView {
       writingRef.current = false;
       setWriting(false);
     }
-  }, [mode, role, publicKey, anchorWallet, status, snapshot, program, connection, sendTransaction, readMetadata, refresh]);
+  }, [mode, role, publicKey, anchorWallet, status, snapshot, snapshotWallet, walletAddress, directoryStatus,
+    directoryIdentity, identity, directory, program, connection, sendTransaction, readMetadata, refresh]);
   const runFanAction = useCallback(async (amount: bigint, onProgress: (value: FanProgress) => void): Promise<FanTransactionResult> => {
     if (writingRef.current) throw new Error('A transaction is already pending.');
     if (mode !== 'connected' || role !== 'fan' || !publicKey || !anchorWallet) {
       throw new Error('Connect a fan wallet before transferring mock-USDC.');
     }
-    if (status !== 'ready' || !snapshot?.profileExists || snapshot.rider.toBase58() !== currentRider.current) {
+    if (status !== 'ready' || directoryStatus !== 'ready' || directoryIdentity !== identity ||
+      snapshotWallet !== walletAddress || !snapshot?.profileExists || snapshot.rider.toBase58() !== currentRider.current ||
+      !directory.some(entry => entry.rider.equals(snapshot.rider))) {
       throw new Error('Load a rider with an on-chain RiderProfile first.');
     }
     const fanAddress = publicKey.toBase58();
@@ -196,27 +230,48 @@ export function useConnectedData(role: string): IntegrationView {
       writingRef.current = false;
       setWriting(false);
     }
-  }, [mode, role, publicKey, anchorWallet, status, snapshot, program, connection, sendTransaction, refresh]);
-  const loadRider = useCallback(() => {
-    const value = riderInput.trim();
-    if (value) {
-      try {
-        if (new PublicKey(value).toBase58() !== value) throw new Error();
-      } catch {
-        setSnapshot(null);
-        setError('Enter a valid Solana rider wallet address.');
-        setStatus('error');
-        return;
-      }
-    }
-    setError('');
-    setTargetRider(value);
-    setRevision(current => current + 1);
-  }, [riderInput]);
-
+  }, [mode, role, publicKey, anchorWallet, status, snapshot, snapshotWallet, walletAddress, directoryStatus,
+    directoryIdentity, identity, directory, program, connection, sendTransaction, refresh]);
   useEffect(() => {
     try { localStorage.setItem(MODE_KEY, mode); } catch { /* Mode still works for this session. */ }
   }, [mode]);
+
+  useEffect(() => {
+    if (mode !== 'connected' || (role !== 'shop' && role !== 'fan')) {
+      setDirectory([]);
+      setDirectoryStatus('idle');
+      setDirectoryError('');
+      return;
+    }
+    let current = true;
+    setDirectoryStatus('loading');
+    setDirectoryError('');
+    discoverRiderDirectory(program).then(entries => {
+      if (!current) return;
+      setDirectory(entries);
+      setDirectoryIdentity(identity);
+      setDirectoryStatus('ready');
+      setTargetRider(selected => selected && !entries.some(entry => entry.rider.toBase58() === selected) ? '' : selected);
+    }).catch(reason => {
+      if (!current) return;
+      setDirectory([]);
+      setDirectoryIdentity(identity);
+      setDirectoryStatus('error');
+      setDirectoryError(reason instanceof Error ? reason.message : 'Unable to discover RiderProfiles on this RPC.');
+      setTargetRider('');
+    });
+    return () => { current = false; };
+  }, [mode, role, walletAddress, program, directoryRevision, identity]);
+
+  const previousWallet = useRef(walletAddress);
+  useEffect(() => {
+    if (previousWallet.current === walletAddress) return;
+    previousWallet.current = walletAddress;
+    setTargetRider('');
+    setSnapshot(null);
+    setMetadata({expenses: {}});
+    setTokenBalances(null);
+  }, [walletAddress]);
 
   useEffect(() => {
     if (mode !== 'connected') {
@@ -236,7 +291,7 @@ export function useConnectedData(role: string): IntegrationView {
     catch {
       setSnapshot(null);
       setStatus('error');
-      setError('The configured rider wallet address is invalid.');
+      setError('The selected rider wallet address is invalid.');
       return;
     }
     let current = true;
@@ -249,6 +304,7 @@ export function useConnectedData(role: string): IntegrationView {
       if (!current) return;
       setMetadata(nextMetadata);
       setSnapshot(result);
+      setSnapshotWallet(walletAddress);
       setStatus('ready');
     }).catch(reason => {
       if (!current) return;
@@ -260,10 +316,10 @@ export function useConnectedData(role: string): IntegrationView {
   }, [mode, role, requestedRider, walletAddress, program, revision, readMetadata]);
 
   useEffect(() => {
-    if (mode !== 'connected' || !requestedRider) return;
+    if (mode !== 'connected' || (role === 'racer' && !requestedRider)) return;
     const timer = window.setInterval(refresh, 20_000);
     return () => window.clearInterval(timer);
-  }, [mode, requestedRider, refresh]);
+  }, [mode, role, requestedRider, refresh]);
 
   useEffect(() => {
     if (mode !== 'connected' || !approvedMockMint || !snapshot?.profileExists ||
@@ -285,7 +341,9 @@ export function useConnectedData(role: string): IntegrationView {
     return () => { current = false; };
   }, [mode, role, requestedRider, walletAddress, snapshot, connection, publicKey, revision]);
 
-  const visibleSnapshot = snapshot?.rider.toBase58() === requestedRider ? snapshot : null;
+  const visibleSnapshot = snapshot?.rider.toBase58() === requestedRider && snapshotWallet === walletAddress &&
+    (role === 'racer' || (directoryIdentity === identity && visibleDirectory.some(entry => entry.rider.equals(snapshot.rider))))
+    ? snapshot : null;
   const visibleStatus = mode === 'connected' && status === 'ready' && !visibleSnapshot
     ? requestedRider ? 'loading' : role === 'racer' ? 'needs-wallet' : 'needs-rider'
     : status;
@@ -294,7 +352,10 @@ export function useConnectedData(role: string): IntegrationView {
 
   return {
     mode, setMode, cluster, state, snapshot: visibleSnapshot, status: visibleStatus, error,
-    riderInput, setRiderInput, loadRider, selectedExpenseId, selectExpense, refresh,
+    directory: visibleDirectory, directoryStatus: directoryIdentity === identity ? directoryStatus : 'loading',
+    directoryError: directoryIdentity === identity ? directoryError : '', selectedRiderAddress: requestedRider,
+    selectRider, refreshDirectory,
+    selectedExpenseId, selectExpense, refresh,
     walletAddress, writing, seasonTitle: metadata.seasonTitle, runRiderAction, runMerchantAction,
     runFanAction, tokenBalances, tokenError,
   };

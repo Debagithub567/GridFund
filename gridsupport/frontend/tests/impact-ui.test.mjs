@@ -13,7 +13,7 @@ await fs.writeFile(path.join(output,'chain/riderTransactions.mjs'),"export const
 await fs.writeFile(path.join(output,'chain/fanTransactions.mjs'),"export const approvedMockMint={};export const parseMockUsdc=value=>BigInt(value)*1000000n;export const formatMockUsdc=value=>String(value/1000000n)+' gsUSDC';\n");
 const explorerSource=await fs.readFile('src/chain/explorer.ts','utf8');
 await fs.writeFile(path.join(output,'chain/explorer.mjs'),ts.transpileModule(explorerSource,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText);
-for(const name of ['model','DemoState','Dashboard','Modal','TransactionResultModal','CommunityImpact']){
+for(const name of ['model','DemoState','Dashboard','RiderDirectory','Modal','TransactionResultModal','CommunityImpact']){
  const source=await fs.readFile(`src/${name}.ts${name==='model'?'':'x'}`,'utf8');
  let code=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext,jsx:ts.JsxEmit.ReactJSX}}).outputText;
  code=code.replace(/import ['"]\.\/[^'"]+\.css['"];?/g,'').replace(/from ['"]\.\/([^'"]+)['"]/g,(_,name)=>`from './${name}.mjs'`);
@@ -83,7 +83,8 @@ test('click Community Impact opens its dialog and progresses without changing sa
  const actions=[];
  const integration={mode:'connected',setMode(){},cluster:'localnet',state:{version:1,expenses:[],contributions:[],selectedExpenseId:''},
   snapshot:{rider:{toBase58:()=>wallet},profileExists:false,seasonExists:false,expenses:[]},status:'ready',error:'',walletAddress:wallet,
-  riderInput:'',setRiderInput(){},loadRider(){},selectedExpenseId:'',selectExpense(){},refresh(){},writing:false,
+  directory:[],directoryStatus:'ready',directoryError:'',selectedRiderAddress:'',selectRider(){},refreshDirectory(){},
+  selectedExpenseId:'',selectExpense(){},refresh(){},writing:false,
   runRiderAction:async(action,args,onProgress)=>{actions.push(action);onProgress({stage:'confirming',signature:'2'.repeat(88)});return {signature:'2'.repeat(88),address:{toBase58:()=>wallet}}},
  };
  await renderDashboard('racer',integration);
@@ -98,6 +99,9 @@ test('click Community Impact opens its dialog and progresses without changing sa
  assert.match(document.querySelector('.transaction-modal').textContent,/dashboard has been refreshed/);
  await renderDashboard('shop',integration);
  assert.equal(document.querySelector('.support-confirm').disabled,true,'Connected Shop writes remain gated');
+ assert.match(document.querySelector('.rider-directory').textContent,/No on-chain RiderProfiles/);
+ await renderDashboard('shop',{...integration,directoryStatus:'error',directoryError:'RPC unavailable'});
+ assert.match(document.querySelector('.rider-directory [role=alert]').textContent,/RPC unavailable/);
  await renderDashboard('fan',integration);
  assert.equal(document.querySelector('.support-confirm').disabled,true,'Connected Fan writes remain gated');
  const chainExpense={id:'chain-expense',title:'Circuit tyres',requiredCents:50000,description:'Tyres',image:'tyres',onChain:true,committedCoverageCents:10000,sponsorshipCount:1};
@@ -105,8 +109,22 @@ test('click Community Impact opens its dialog and progresses without changing sa
  const shopIntegration={...integration,state:{version:1,expenses:[chainExpense],contributions:[],selectedExpenseId:chainExpense.id},
   snapshot:{...integration.snapshot,profileExists:true,seasonExists:true,seasonBudgetCents:50000n,seasonStatus:1},
   runMerchantAction:()=>{sponsorshipCalls++;return new Promise(resolve=>{resolveSponsorship=resolve})}};
+ let selectedRider='';
+ const firstRider={rider:{toBase58:()=>wallet},profileAddress:{toBase58:()=>wallet},displayName:'Rider #1',seasonTitle:null,
+  snapshot:shopIntegration.snapshot,expenseCount:1,seasonBudgetCents:50000n,merchantCoverageCents:10000n,remainingCoverageCents:40000n};
+ shopIntegration.directory=[firstRider];shopIntegration.selectRider=address=>{selectedRider=address};
  await renderDashboard('shop',{...shopIntegration,walletAddress:''});
  assert.equal(document.querySelector('.support-confirm').disabled,true,'missing merchant wallet blocks Connected Shop submission');
+ await renderDashboard('shop',shopIntegration);
+ assert.equal(document.querySelectorAll('.rider-directory-card').length,1,'one valid rider makes one card');
+ assert.match(document.querySelector('.rider-directory-card').textContent,/Season #1/,'missing metadata has an honest fallback');
+ await act(async()=>document.querySelector('.rider-directory-card button').click());
+ assert.equal(selectedRider,wallet,'Shop selects the on-chain rider address');
+ const secondAddress='22222222222222222222222222222222';
+ const secondRider={...firstRider,rider:{toBase58:()=>secondAddress},profileAddress:{toBase58:()=>secondAddress},displayName:'Rider #2',expenseCount:0,
+  seasonBudgetCents:null,merchantCoverageCents:0n,remainingCoverageCents:0n,snapshot:{...firstRider.snapshot,seasonExists:false}};
+ await renderDashboard('shop',{...shopIntegration,directory:[firstRider,secondRider]});
+ assert.equal(document.querySelectorAll('.rider-directory-card').length,2,'multiple riders show distinct cards');
  await renderDashboard('shop',shopIntegration);
  const record=document.querySelector('.support-confirm');
  assert.equal(record.disabled,false,'wallet and on-chain expense enable Shop action');

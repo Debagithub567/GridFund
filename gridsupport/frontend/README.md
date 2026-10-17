@@ -1,10 +1,10 @@
-# GridSupport frontend — Stage 4B Step 5
+# GridSupport frontend — shared Rider Directory
 
 React 19, TypeScript, Vite, Framer Motion, and Solana wallet adapter. The approved Stage 4A presentation remains available in Demo mode.
 
 ## Run
 
-Use Node 22.18+ or 24. From `frontend/`, run `npm ci`, copy `.env.example` to `.env.local`, and run `npm run dev`. Set `VITE_SOLANA_CLUSTER=localnet` or `devnet`; localnet is the default. An optional `VITE_SOLANA_RPC_URL` overrides the RPC. A signing wallet must support the selected network; Phantom does not offer a custom local validator network. `VITE_RIDER_PUBLIC_KEY` can preload the public Shop and Fan read views. Never put a private key in a frontend environment file.
+Use Node 22.18+ or 24. From `frontend/`, run `npm ci`, copy `.env.example` to `.env.local`, and run `npm run dev`. Set `VITE_SOLANA_CLUSTER=localnet` or `devnet`; localnet is the default. An optional `VITE_SOLANA_RPC_URL` overrides the RPC and can point to a privately configured Chainstack Devnet endpoint. A signing wallet must support the selected network; Phantom does not offer a custom local validator network. Never put a private key or RPC credential in a committed frontend environment file.
 
 Routes: `/`, `/racer`, `/shop`, `/fan`. Static hosting needs an `index.html` SPA fallback. Photos and the optional victory MP4 are under `public/`.
 
@@ -16,11 +16,19 @@ Every Rider action requests a wallet signature. The modal shows approval, submis
 
 After verification, Connected mode replaces its account snapshot automatically, including the new profile, season or expense. The new expense becomes selected. A rejected wallet request or failed confirmation does not show success. If a wallet changes while a transaction is in flight, reconnect the original rider wallet and refresh its accounts before continuing.
 
-Shop and Fan Connected views read public Rider data by wallet address. Merchant in-kind coverage is taken from on-chain Expense accounts. Direct fan mock-USDC transfers remain separate from expense coverage.
+Shop and Fan Connected views discover public RiderProfiles automatically from the configured program and RPC. Merchant in-kind coverage is taken from on-chain Expense accounts. Direct fan mock-USDC transfers remain separate from expense coverage.
+
+## Shared Rider Directory
+
+Both Connected Shop and Connected Fan use the same Rider Directory. It queries the configured program with `getProgramAccounts`, filtering by the IDL RiderProfile discriminator and account size. Each result is decoded with the existing Anchor coder and checked against its canonical PDA. The existing account reader then loads the rider's Season, Expenses and Sponsorships. Cards are sorted by public key and show the verified season budget, expense count, merchant coverage and remaining coverage. A card selects the rider for the existing Shop or Fan transaction adapter. The directory refreshes when entering either dashboard, changing wallets, using **Refresh Riders**, and during the 20-second poll. Selection refreshes that rider's accounts.
+
+The program has no readable rider name or image field. Cards use `Rider #1`, `Rider #2`, and so on in deterministic order, plus the public wallet address and an explicitly illustrative existing photograph. Season titles appear only when this browser holds matching hash-verified metadata; otherwise the card says `Season #1` or `Season not created`. A rider created in another browser still appears. Zero profiles produce an empty state; an RPC or deployment failure produces a visible error and retry action. No demo riders or localStorage records are used as directory membership.
+
+The selected RPC must support filtered `getProgramAccounts`; a provider that disables it cannot serve the directory. A Chainstack URL belongs in a local, uncommitted `.env.local`. Vite embeds that URL in browser code, so it must be suitable for browser exposure. This repository has no Chainstack credential or verified Devnet deployment.
 
 ## Connected Shop sponsorship workflow
 
-On `/shop`, choose **Connected**, connect a merchant wallet, enter the rider's public wallet address, and load their on-chain expenses. Select an expense and enter any positive EUR amount with up to two decimal places, no greater than the displayed remaining merchant coverage. **Record Sponsorship** asks the merchant wallet to sign and pay the Solana transaction fee. It records an in-kind commitment; the instruction transfers no SOL or tokens and does not verify delivery of goods or services. The rider does not sign.
+On `/shop`, choose **Connected**, connect a merchant wallet, select a rider card, and browse that rider's on-chain expenses. Select an expense and enter any positive EUR amount with up to two decimal places, no greater than the displayed remaining merchant coverage. **Record Sponsorship** asks the merchant wallet to sign and pay the Solana transaction fee. It records an in-kind commitment; the instruction transfers no SOL or tokens and does not verify delivery of goods or services. The rider does not sign. A rider with no season or expenses has an explicit empty state.
 
 The app re-reads the expense immediately before building the instruction, derives the next canonical sponsorship PDA from its current sponsorship count, confirms the signature, and re-reads both the sponsorship and expense before showing **Sponsorship Recorded!**. The modal shows the actual signature, network and Explorer link. A rejected signature, failed transaction, changed wallet, or unverified account cannot show success. Failed submissions trigger an account refresh, including when another merchant has filled the expense first. A fully covered expense cannot be sponsored again. Repeated valid commitments by the same merchant create separate sponsorship accounts.
 
@@ -28,7 +36,7 @@ Shop and Rider views use the same program accounts for merchant coverage; Demo s
 
 ## Connected Fan contribution workflow
 
-On `/fan`, choose **Connected**, connect a fan wallet, and load the recipient RiderProfile by public wallet address. The recipient address and current fan/rider token account balances appear above the amount field. Enter a positive mock-USDC amount with at most six decimal places and click **Support Rider**. The fan needs local SOL for fees and, if missing, creation of the rider's canonical associated token account (ATA). The app never mints tokens to a connected wallet.
+On `/fan`, choose **Connected**, connect a fan wallet, and select the recipient's Rider Directory card. The recipient address and current fan/rider token account balances appear above the amount field. Enter a positive mock-USDC amount with at most six decimal places and click **Support Rider**. The fan needs local SOL for fees and, if missing, creation of the rider's canonical associated token account (ATA). The app never mints tokens to a connected wallet.
 
 The local build approves only the dedicated six-decimal standard SPL Token mint `6Ckm2BrnXxsSjyG5b17kQQRjoECVrts92RKXVGT8XeqS`. The default program build has no approved mint; Fan writes are unavailable on Devnet until a reviewed mint and program deployment are separately approved. The app checks the mint, fan source account and rider ATA, then requests one wallet signature for ATA creation if needed and `contribute_direct`. It waits for confirmation, verifies the exact source debit and destination credit in that transaction's token balance metadata, and refreshes both displayed balances before showing **Contribution Transferred!** with the real signature and Explorer link. A rejected or unverifiable transaction cannot show success.
 
@@ -78,3 +86,11 @@ Only temporary validator wallets were used. No Devnet deployment or browser wall
 - Root typecheck passed. IDL suite: 3 passed, 0 failed; LiteSVM integration suite: 24 passed, 0 failed; default-mint regression: 1 passed, 0 failed; Rider/Shop structural Rust suite: 5 passed, 0 failed.
 
 Only temporary local validator wallets were used. Phantom has no custom local validator RPC setting, so a browser wallet-extension transaction was not performed. No Devnet deployment was made.
+
+## Shared Rider Directory verification (17 October 2026)
+
+- Frontend regression suite: 24 passed, 0 failed, 0 skipped. This includes IDL-filtered zero/one/multiple-rider discovery, deterministic ordering, coverage refresh, RPC error and fallback states, wallet-switch clearing, Connected UI selection, Demo isolation and existing transaction regressions.
+- Isolated local validator: 4 passed, 0 failed, 0 skipped. The new case discovered two real RiderProfiles, selected one for a confirmed Shop sponsorship and Fan transfer, and verified that merchant coverage remained unchanged by the Fan transfer.
+- Frontend TypeScript and production build passed. Root typecheck passed; LiteSVM integration: 24 passed, default-mint: 1 passed, IDL: 3 passed, Rust structural: 5 passed. The default SBF build was restored after local testing.
+
+No browser wallet signing pass or Chainstack/Devnet query was performed. The configured Devnet program must exist at the bundled program ID, and the selected RPC must support filtered `getProgramAccounts`; Fan writes additionally require a separately approved Devnet mock-USDC mint and program build.

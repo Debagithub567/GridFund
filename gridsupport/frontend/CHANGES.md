@@ -34,3 +34,10 @@ Initialized animation timing from the first animation-frame callback and clamped
 - The success modal appears only after confirmation, signature-specific source debit and rider credit verification, and refreshed token balances. It displays the actual amount, rider address, network, signature and Explorer link. Pending submissions cannot be duplicated.
 - Connected Fan labels expense selection as optional presentation context. Token transfers do not change merchant coverage or imply a EUR value. Demo mode, landing page, Community Impact and media remain separate.
 - Added a repeatable local mint/validator fixture and Fan unit, UI and isolated RPC tests. The default program mint stays unconfigured; no Devnet mint or deployment was created.
+
+## Shared Rider Directory — Shop and Fan discovery
+
+- Replaced typed rider addresses and the optional preloaded rider address with one shared on-chain Rider Directory for Connected Shop and Fan. It filters actual RiderProfile accounts by the IDL discriminator and size, validates canonical PDAs, and reuses the existing Season/Expense/Sponsorship reader.
+- Added deterministic multi-rider cards, safe names and season metadata fallbacks, explicit empty/RPC-error states, selection, refresh and 20-second polling. Wallet changes clear the selected rider and hide stale account data.
+- Shop and Fan keep their existing transaction adapters. Sponsorship updates directory merchant coverage; direct fan token transfers remain separate. Demo mode and presentation assets are unchanged.
+- Added directory unit/UI coverage and an isolated validator Rider → Shop → Fan discovery workflow. No contract, PDA, program ID, mint policy, Devnet deployment, or network endpoint was changed.

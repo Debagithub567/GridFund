@@ -18,7 +18,7 @@ cd frontend
 GRIDSUPPORT_LOCAL_RPC=http://127.0.0.1:8899 GRIDSUPPORT_LOCAL_MINT_AUTHORITY=/tmp/gridsupport-fan-step5/mint-authority.json npm run test:local-validator
 ```
 
-The test creates separate temporary Rider, Shop and Fan keypairs, a RiderProfile, Season, Expense, Shop sponsorships and Fan token transfer. It funds the fan only on this validator, creates the rider ATA in the Fan transaction, prints test assertions and exits. Inspect the transaction signature with `solana confirm <SIGNATURE> --url http://127.0.0.1:8899 --verbose`, or open the modal's Explorer link if a compatible browser wallet is available. Explorer's localnet link needs a local RPC and may have browser cross-origin restrictions. The test checks the exact source debit, destination credit and unchanged merchant coverage.
+The test creates temporary Rider, Shop and Fan keypairs, RiderProfiles, Seasons, Expenses, Shop sponsorships and Fan token transfers. Its shared-directory case creates two riders, discovers both through filtered `getProgramAccounts`, selects one for Shop and Fan transactions, and verifies that token support leaves merchant coverage unchanged. It funds fans only on this validator, creates rider ATAs in Fan transactions, prints test assertions and exits. Inspect a transaction signature with `solana confirm <SIGNATURE> --url http://127.0.0.1:8899 --verbose`, or open the modal's Explorer link if a compatible browser wallet is available. Explorer's localnet link needs a local RPC and may have browser cross-origin restrictions.
 
 ## Start the frontend
 
@@ -29,7 +29,7 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Keep `VITE_SOLANA_CLUSTER=localnet` and `VITE_SOLANA_RPC_URL=http://127.0.0.1:8899` in `.env.local`. Open the URL printed by Vite. Demo mode needs no wallet. Connected public Rider, Shop and Fan reads can use `VITE_RIDER_PUBLIC_KEY=<RIDER_PUBLIC_KEY>`. The app never accepts a private key in an environment variable.
+Keep `VITE_SOLANA_CLUSTER=localnet` and `VITE_SOLANA_RPC_URL=http://127.0.0.1:8899` in `.env.local`. Open the URL printed by Vite. Demo mode needs no wallet. Connected Shop and Fan now discover RiderProfiles directly from the validator and present them as selectable cards; no rider-address environment variable is needed. The app never accepts a private key in an environment variable.
 
 ## Temporary wallet funding
 
@@ -62,6 +62,6 @@ The `100` mint amount means 100.000000 gsUSDC. The Fan transaction creates the c
 
 [Phantom's current developer settings](https://help.phantom.com/articles/use-testnets-in-phantom-5997313271699) expose Solana Devnet and Testnet, but no custom local validator RPC. **There is no Phantom setting that makes this isolated local chain its network.** Do not select Devnet in Phantom while the app points at localnet, and do not expose the validator to the internet to work around this. The current frontend registers Phantom, so the full browser wallet-extension signing sequence has not been verified locally. The isolated RPC test above is the completed Rider → Shop → Fan transaction proof.
 
-When a supported localnet signing wallet is added and verified in a later step, use the temporary funded keypairs: connect rider on `/racer`, create a profile, season and custom expense; connect shop on `/shop`, load the rider address and record in-kind sponsorship; connect fan on `/fan`, load the same rider, enter a custom gsUSDC amount and sign. Check the modal's real signature, the fan debit and rider ATA credit, and that Shop/Rider merchant expense coverage remains unchanged by the Fan transfer. Rejected signatures and insufficient balances must show errors. Demo mode, Community Impact and Reset Demo can be exercised separately without a wallet.
+When a supported localnet signing wallet is added and verified in a later step, use the temporary funded keypairs: connect rider on `/racer`, create a profile, season and custom expense; connect shop on `/shop`, select the newly discovered rider card and record in-kind sponsorship; connect fan on `/fan`, select the same rider card, enter a custom gsUSDC amount and sign. Check the modal's real signature, the fan debit and rider ATA credit, and that Shop/Rider merchant expense coverage remains unchanged by the Fan transfer. Rejected signatures and insufficient balances must show errors. Demo mode, Community Impact and Reset Demo can be exercised separately without a wallet.
 
 Stop terminal 1 with Ctrl-C. The launcher restores the default SBF build. Restarting it with the same directory resets the isolated ledger. Delete `/tmp/gridsupport-fan-step5` when finished to remove the temporary authority and wallet keypairs.

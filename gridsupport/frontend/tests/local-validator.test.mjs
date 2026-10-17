@@ -9,6 +9,7 @@ import {fetchRiderSnapshot} from '../src/chain/accounts.ts';
 import {initializeRider, createSeason, addExpense} from '../src/chain/riderTransactions.ts';
 import {sponsorExpense} from '../src/chain/merchantTransactions.ts';
 import {contributeDirect, parseMockUsdc, LOCAL_MOCK_USDC_MINT} from '../src/chain/fanTransactions.ts';
+import {discoverRiderDirectory} from '../src/chain/riderDirectory.ts';
 import {sha256Text} from '../src/chain/metadata.ts';
 import {explorerTransactionUrl} from '../src/chain/explorer.ts';
 import {expensePda, sponsorshipPda, riderProfilePda} from '../src/chain/pdas.ts';
@@ -236,3 +237,54 @@ test('signed Shop sponsorship workflow on an isolated local validator', {skip: !
   assert.equal(riderRead.expenses[0].sponsorships.length, 3);
   console.log('Local validator confirmed Shop signatures:', [first.signature, second.signature, full.signature].join(' '));
 });
+
+test('shared directory selects actual Rider accounts for Shop then Fan on an isolated validator',
+  {skip: !rpc || !mintAuthorityPath}, async () => {
+    const connection = new Connection(rpc, 'confirmed');
+    const authority = Keypair.fromSecretKey(Uint8Array.from(JSON.parse(readFileSync(mintAuthorityPath, 'utf8'))));
+    const rider = Keypair.generate();
+    const otherRider = Keypair.generate();
+    const merchant = Keypair.generate();
+    const fan = Keypair.generate();
+    for (const signer of [authority, rider, otherRider, merchant, fan]) {
+      const signature = await connection.requestAirdrop(signer.publicKey, 2_000_000_000);
+      const latest = await connection.getLatestBlockhash('confirmed');
+      assert.equal((await connection.confirmTransaction({signature, ...latest}, 'confirmed')).value.err, null);
+    }
+    const program = createGridProgram(connection);
+    const sendBy = signer => async transaction => {
+      transaction.sign(signer);
+      return connection.sendRawTransaction(transaction.serialize(), {skipPreflight: false, preflightCommitment: 'confirmed'});
+    };
+    const riderCtx = signer => ({program, connection, rider: signer.publicKey, send: sendBy(signer), onProgress: () => {}});
+    await initializeRider(riderCtx(rider));
+    await initializeRider(riderCtx(otherRider));
+    await createSeason(riderCtx(rider), 100000, 'Directory test season');
+    const expense = await addExpense(riderCtx(rider), 50000, 1, 'Discovered race need');
+    let directory = await discoverRiderDirectory(program);
+    const discovered = directory.find(entry => entry.rider.equals(rider.publicKey));
+    const second = directory.find(entry => entry.rider.equals(otherRider.publicKey));
+    assert(discovered && second, 'both on-chain profiles appear without a typed address');
+    assert.equal(new Set(directory.map(entry => entry.rider.toBase58())).size, directory.length);
+    assert.equal(discovered.expenseCount, 1);
+    assert.equal(discovered.snapshot.expenses[0].address.toBase58(), expense.address.toBase58());
+    assert.equal(second.expenseCount, 0);
+    assert.equal(second.seasonTitle, null);
+    const sponsored = await sponsorExpense({program, connection, merchant: merchant.publicKey,
+      send: sendBy(merchant), onProgress: () => {}}, discovered.rider, discovered.snapshot.expenses[0].address, 1234);
+    assert.match(explorerTransactionUrl(sponsored.signature, 'localnet', rpc), /cluster=custom/);
+    directory = await discoverRiderDirectory(program);
+    const selectedForFan = directory.find(entry => entry.rider.equals(rider.publicKey));
+    assert.equal(selectedForFan.merchantCoverageCents, 1234n);
+    assert.equal(selectedForFan.remainingCoverageCents, 48766n);
+    const fanSource = await getOrCreateAssociatedTokenAccount(connection, authority, LOCAL_MOCK_USDC_MINT, fan.publicKey);
+    await mintTo(connection, authority, LOCAL_MOCK_USDC_MINT, fanSource.address, authority, 10_000_000n);
+    const contribution = await contributeDirect({program, connection, fan: fan.publicKey,
+      send: sendBy(fan), onProgress: () => {}}, selectedForFan.rider, parseMockUsdc('2.5'));
+    assert.equal(contribution.balances.fan, 7_500_000n);
+    assert.equal(contribution.balances.rider, 2_500_000n);
+    directory = await discoverRiderDirectory(program);
+    assert.equal(directory.find(entry => entry.rider.equals(rider.publicKey)).merchantCoverageCents, 1234n,
+      'direct fan tokens do not alter merchant expense coverage');
+    console.log('Local validator directory Shop/Fan signatures:', sponsored.signature, contribution.signature);
+  });

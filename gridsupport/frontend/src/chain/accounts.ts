@@ -85,7 +85,30 @@ export async function fetchRiderSnapshot(program: Program<Gridsupport>, rider: P
   if (!profile) return empty;
   if (!profile.rider.equals(rider)) throw new Error('Rider profile does not match the requested wallet.');
   const season = await fetchOne<RawSeason>(program, 'season', seasonAddress);
-  if (!season) return {...empty, profileExists: true};
+  return snapshotWithSeason(program, rider, season);
+}
+
+// Discovery has already verified the canonical profiles. Batch their season
+// reads instead of repeating the program/profile RPC checks for every card.
+export async function fetchRegisteredRiderSnapshots(program: Program<Gridsupport>, riders: PublicKey[]): Promise<ChainSnapshot[]> {
+  const seasonAddresses = riders.map(rider => seasonPda(riderProfilePda(rider)));
+  const seasons = await fetchInBatches<RawSeason>(program, 'season', seasonAddresses);
+  const snapshots: ChainSnapshot[] = [];
+  for (let start = 0; start < riders.length; start += 4) {
+    snapshots.push(...await Promise.all(riders.slice(start, start + 4).map((rider, offset) =>
+      snapshotWithSeason(program, rider, seasons[start + offset]))));
+  }
+  return snapshots;
+}
+
+async function snapshotWithSeason(program: Program<Gridsupport>, rider: PublicKey, season: RawSeason | null): Promise<ChainSnapshot> {
+  const profileAddress = riderProfilePda(rider);
+  const seasonAddress = seasonPda(profileAddress);
+  const empty: ChainSnapshot = {
+    rider, profileAddress, profileExists: true, seasonAddress,
+    seasonExists: false, seasonBudgetCents: null, seasonTitleHash: null, seasonStatus: null, expenses: [],
+  };
+  if (!season) return empty;
   if (!season.rider.equals(rider)) throw new Error('Season does not belong to the requested rider.');
 
   const expenseCount = safeCount(BigInt(season.expenseCount.toString()), 'Expense count');

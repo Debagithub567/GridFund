@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "tsc --noEmit && vite build",
-    "test": "node --test tests/model.test.mjs tests/impact-ui.test.mjs && node --import tsx --test tests/chain.test.mjs tests/rider-transactions.test.mjs tests/shop-transactions.test.mjs tests/fan-transactions.test.mjs",
+    "test": "node --test tests/model.test.mjs tests/impact-ui.test.mjs tests/rider-directory-hook.test.mjs && node --import tsx --test tests/chain.test.mjs tests/rider-directory.test.mjs tests/rider-transactions.test.mjs tests/shop-transactions.test.mjs tests/fan-transactions.test.mjs",
     "test:local-validator": "node --import tsx --test tests/local-validator.test.mjs"
   },
   "dependencies": {
@@ -16,6 +16,7 @@
     "@solana/wallet-adapter-phantom": "^0.9.30",
     "@solana/wallet-adapter-react": "^0.15.40",
     "@solana/web3.js": "^1.99.0",
+    "buffer": "^6.0.3",
     "framer-motion": "^12.0.0",
     "lucide-react": "^1.31.0",
     "react": "19.2.6",
