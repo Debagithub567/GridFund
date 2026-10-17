@@ -67,6 +67,65 @@ test('click Community Impact opens its dialog and progresses without changing sa
  await act(async()=>document.querySelector('.gs-modal-close').click());
  await act(async()=>{await new Promise(resolve=>setTimeout(resolve,350))});for(let i=0;i<20;i++)await tick();
  assert.ok(!document.querySelector('.impact-modal'),'close removes the dialog');
+
+ const renderDashboard=async(role,integration)=>act(async()=>root.render(React.createElement(React.StrictMode,null,React.createElement(MotionConfig,{skipAnimations:true},React.createElement(DemoProvider,null,React.createElement(Dashboard,{role,integration}))))));
+ await renderDashboard('shop');
+ assert.ok(document.querySelector('.support-form'),'Shop demo support form remains available');
+ assert.match(document.querySelector('.dash-top').textContent,/FRONTEND PREVIEW/);
+ assert.equal(document.querySelector('.support-confirm').disabled,false);
+ await renderDashboard('fan');
+ assert.ok(document.querySelector('.support-form'),'Fan demo support form remains available');
+ assert.match(document.querySelector('.support-confirm').textContent,/CONTRIBUTE/);
+ assert.equal(document.querySelector('.support-confirm').disabled,false);
+
+ const wallet='11111111111111111111111111111111';
+ const actions=[];
+ const integration={mode:'connected',setMode(){},cluster:'localnet',state:{version:1,expenses:[],contributions:[],selectedExpenseId:''},
+  snapshot:{rider:{toBase58:()=>wallet},profileExists:false,seasonExists:false,expenses:[]},status:'ready',error:'',walletAddress:wallet,
+  riderInput:'',setRiderInput(){},loadRider(){},selectedExpenseId:'',selectExpense(){},refresh(){},writing:false,
+  runRiderAction:async(action,args,onProgress)=>{actions.push(action);onProgress({stage:'confirming',signature:'2'.repeat(88)});return {signature:'2'.repeat(88),address:{toBase58:()=>wallet}}},
+ };
+ await renderDashboard('racer',integration);
+ assert.match(document.querySelector('.dash-top').textContent,/ONCHAIN RIDER/);
+ assert.match(document.querySelector('.dash-profile').textContent,/No on-chain expense/);
+ assert.doesNotMatch(document.querySelector('.dash-panel').textContent,/Test tyres/,'demo expense stays out of Connected mode');
+ const createProfile=[...document.querySelectorAll('.chain-status-actions button')].find(button=>button.textContent.includes('CREATE RIDER PROFILE'));
+ assert.ok(createProfile,'Rider action is available to the owner');
+ await act(async()=>createProfile.click());
+ assert.deepEqual(actions,['profile']);
+ assert.match(document.querySelector('.transaction-modal').textContent,/Confirmed/);
+ assert.match(document.querySelector('.transaction-modal').textContent,/dashboard has been refreshed/);
+ await renderDashboard('shop',integration);
+ assert.equal(document.querySelector('.support-confirm').disabled,true,'Connected Shop writes remain gated');
+ await renderDashboard('fan',integration);
+ assert.equal(document.querySelector('.support-confirm').disabled,true,'Connected Fan writes remain gated');
+ const chainExpense={id:'chain-expense',title:'Circuit tyres',requiredCents:50000,description:'Tyres',image:'tyres',onChain:true,committedCoverageCents:10000,sponsorshipCount:1};
+ let resolveSponsorship;let sponsorshipCalls=0;
+ const shopIntegration={...integration,state:{version:1,expenses:[chainExpense],contributions:[],selectedExpenseId:chainExpense.id},
+  snapshot:{...integration.snapshot,profileExists:true,seasonExists:true,seasonBudgetCents:50000n,seasonStatus:1},
+  runMerchantAction:()=>{sponsorshipCalls++;return new Promise(resolve=>{resolveSponsorship=resolve})}};
+ await renderDashboard('shop',{...shopIntegration,walletAddress:''});
+ assert.equal(document.querySelector('.support-confirm').disabled,true,'missing merchant wallet blocks Connected Shop submission');
+ await renderDashboard('shop',shopIntegration);
+ const record=document.querySelector('.support-confirm');
+ assert.equal(record.disabled,false,'wallet and on-chain expense enable Shop action');
+ assert.match(document.querySelector('.selected-support-overview').textContent,/merchant committed €100/);
+ await act(async()=>{record.click();record.click()});
+ assert.equal(sponsorshipCalls,1,'duplicate clicks submit only one sponsorship');
+ assert.equal(document.querySelector('.support-confirm').disabled,true,'pending sponsorship disables submission');
+ await act(async()=>resolveSponsorship({signature:'2'.repeat(88),address:{toBase58:()=>wallet}}));
+ assert.match(document.querySelector('.transaction-modal').textContent,/Sponsorship Recorded!/);
+ assert.match(document.querySelector('.result-explorer').getAttribute('href'),/cluster=custom/);
+ const updatedExpense={...chainExpense,committedCoverageCents:20000,sponsorshipCount:2};
+ const confirmedView={...shopIntegration,state:{...shopIntegration.state,expenses:[updatedExpense]}};
+ await renderDashboard('shop',confirmedView);
+ assert.match(document.querySelector('.selected-support-overview').textContent,/merchant committed €200/);
+ assert.match(document.querySelector('.selected-support-overview').textContent,/remaining €300/);
+ await renderDashboard('racer',confirmedView);
+ assert.match(document.querySelector('.dash-summary').textContent,/€200/,'Rider reads the same confirmed coverage');
+ await renderDashboard('shop',{...confirmedView,state:{...confirmedView.state,expenses:[{...updatedExpense,committedCoverageCents:50000}]}});
+ assert.equal(document.querySelector('.support-confirm').disabled,true,'fully covered on-chain expense cannot be sponsored');
+ assert.equal(localStorage.getItem(STORAGE_KEY),JSON.stringify(state),'switching dashboards and modes preserves Demo data');
  }finally{await act(async()=>root.unmount());dom.window.close();await fs.rm(output,{recursive:true,force:true})}
 });
 process.on('exit',()=>{dom.window.close()});

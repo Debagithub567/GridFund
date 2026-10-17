@@ -8,8 +8,22 @@
 - Added fullscreen victory celebration, six-second placeholder, optional custom MP4 with embedded audio, playback controls and a 2.8-second closing message.
 - Added Stage 4B integration notes and regression tests for amounts, coverage, persistence, editing and visualization invariants.
 
-No wallet, Anchor, program deployment, token mint or backend integration was added. The downloadable ZIP is intentionally deferred until the preview is approved.
+At Stage 4A, no wallet, Anchor, program deployment, token mint or backend integration was added. The downloadable ZIP was deferred until the preview was approved.
 
 ## Community Impact opening fix
 
 Initialized animation timing from the first animation-frame callback and clamped progress sampling to valid bounds. The modal now starts visibly. Added an interaction regression covering launch, full completion, victory fallback, replay, skip, close and unchanged saved contributions.
+
+## Stage 4B Step 3 — Rider integration
+
+- Added Connected mode with wallet-signed RiderProfile, Season and custom-amount Expense creation. The adapter confirms each signature and fetches the created account before showing success; the dashboard refreshes from that verified snapshot.
+- Added public Rider account reads, canonical PDA derivation, on-chain merchant coverage, and a browser-local metadata registry for readable titles and descriptions. Demo state remains separate.
+- Kept Shop and Fan Connected writes disabled for Step 4. The landing page, Shop/Fan Demo dashboards, and Community Impact sequence remain available.
+- Added IDL, transaction, local-validator, and dashboard regression coverage. This step did not deploy the program or create a Devnet mint.
+
+## Stage 4B Step 4 — Shopkeeper sponsorship
+
+- Connected Shop now records wallet-signed in-kind sponsorships with the existing `sponsor_expense` instruction. It uses a fresh expense read, canonical sponsorship PDA, confirmation, and account verification before showing success.
+- Shop coverage and remaining amounts refresh from program accounts. Rider and Shop read the same confirmed sponsorships; other sessions have a visible refresh button and 20-second polling.
+- Added exact-cent validation, pending and duplicate-submission guards, wallet and RPC failure handling, and a distinct recorded-sponsorship result message. Demo support and Fan Connected writes remain separate.
+- Added Shop adapter, dashboard, and isolated local-validator regressions without changing the program, PDA seeds, landing page, Community Impact, or victory media.

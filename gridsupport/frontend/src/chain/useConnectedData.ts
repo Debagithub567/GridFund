@@ -8,6 +8,8 @@ import {cluster, configuredRider} from './config';
 import {createGridProgram} from './program';
 import {addExpense, createSeason, initializeRider} from './riderTransactions';
 import type {RiderAction, RiderProgress, RiderTransactionResult} from './riderTransactions';
+import {sponsorExpense} from './merchantTransactions';
+import type {MerchantProgress, MerchantTransactionResult} from './merchantTransactions';
 import {saveExpenseMetadata, saveSeasonMetadata, verifiedExpenseMetadata, verifiedSeasonTitle} from './metadata';
 import type {VerifiedMetadata} from './metadata';
 
@@ -31,6 +33,7 @@ export type IntegrationView = {
   writing: boolean;
   seasonTitle?: string;
   runRiderAction: (action: RiderAction, args: {title?: string; budgetCents?: number; amountCents?: number; category?: number; description?: string}, onProgress: (value: RiderProgress) => void) => Promise<RiderTransactionResult>;
+  runMerchantAction: (expenseId: string, amountCents: number, onProgress: (value: MerchantProgress) => void) => Promise<MerchantTransactionResult>;
 };
 
 const MODE_KEY = 'gridsupport-stage4b-mode';
@@ -60,6 +63,8 @@ export function useConnectedData(role: string): IntegrationView {
   const currentWallet = useRef(walletAddress);
   currentWallet.current = walletAddress;
   const requestedRider = role === 'racer' ? walletAddress : targetRider;
+  const currentRider = useRef(requestedRider);
+  currentRider.current = requestedRider;
 
   const setMode = useCallback((next: DataMode) => setModeState(next), []);
   const refresh = useCallback(() => setRevision(value => value + 1), []);
@@ -95,19 +100,62 @@ export function useConnectedData(role: string): IntegrationView {
           await addExpense(context, args.amountCents!, args.category!, args.description || '');
       if (action === 'season') saveSeasonMetadata(result.address.toBase58(), args.title || '', result.hash!);
       if (action === 'expense') saveExpenseMetadata(result.address.toBase58(), args.title || '', args.description || '', args.category!, result.hash!);
-      if (currentWallet.current === ownerAddress) {
-        setMetadata(await readMetadata(result.snapshot));
-        setSnapshot(result.snapshot);
-        setStatus('ready');
-        setError('');
-        onProgress({stage: 'confirmed', signature: result.signature});
+      const nextMetadata = await readMetadata(result.snapshot);
+      if (currentWallet.current !== ownerAddress) {
+        throw new Error('Transaction confirmed, but the wallet changed before accounts could refresh. Reconnect the original rider wallet and refresh accounts.');
       }
+      setMetadata(nextMetadata);
+      setSnapshot(result.snapshot);
+      setStatus('ready');
+      setError('');
+      onProgress({stage: 'confirmed', signature: result.signature});
       return result;
     } finally {
       writingRef.current = false;
       setWriting(false);
     }
   }, [mode, role, publicKey, anchorWallet, snapshot, status, program, connection, sendTransaction, readMetadata]);
+  const runMerchantAction = useCallback(async (expenseId: string, amountCents: number,
+    onProgress: (value: MerchantProgress) => void): Promise<MerchantTransactionResult> => {
+    if (writingRef.current) throw new Error('A transaction is already pending.');
+    if (mode !== 'connected' || role !== 'shop' || !publicKey || !anchorWallet) {
+      throw new Error('Connect a merchant wallet before recording an in-kind sponsorship.');
+    }
+    if (status !== 'ready' || !snapshot || snapshot.rider.toBase58() !== currentRider.current ||
+      !snapshot.expenses.some(expense => expense.address.toBase58() === expenseId)) {
+      throw new Error('Load a rider and select one of their on-chain expenses.');
+    }
+    const merchantAddress = publicKey.toBase58();
+    if (currentWallet.current !== merchantAddress) throw new Error('Merchant wallet changed. Reconnect it before signing.');
+    writingRef.current = true;
+    setWriting(true);
+    try {
+      const result = await sponsorExpense({
+        program, connection, merchant: publicKey,
+        send: transaction => {
+          if (currentWallet.current !== merchantAddress) throw new Error('Merchant wallet changed before signature. Reconnect it.');
+          return sendTransaction(transaction, connection, {skipPreflight: false, preflightCommitment: 'confirmed'});
+        },
+        onProgress,
+      }, snapshot.rider, new PublicKey(expenseId), amountCents);
+      const nextMetadata = await readMetadata(result.snapshot);
+      if (currentWallet.current !== merchantAddress || currentRider.current !== result.snapshot.rider.toBase58()) {
+        throw new Error('Sponsorship confirmed, but the wallet or rider changed before accounts could refresh. Reload the rider accounts.');
+      }
+      setMetadata(nextMetadata);
+      setSnapshot(result.snapshot);
+      setStatus('ready');
+      setError('');
+      onProgress({stage: 'confirmed', signature: result.signature});
+      return result;
+    } catch (reason) {
+      refresh();
+      throw reason;
+    } finally {
+      writingRef.current = false;
+      setWriting(false);
+    }
+  }, [mode, role, publicKey, anchorWallet, status, snapshot, program, connection, sendTransaction, readMetadata, refresh]);
   const loadRider = useCallback(() => {
     const value = riderInput.trim();
     if (value) {
@@ -168,7 +216,7 @@ export function useConnectedData(role: string): IntegrationView {
       setError(reason instanceof Error ? reason.message : 'Unable to read Solana accounts.');
     });
     return () => { current = false; };
-  }, [mode, role, requestedRider, program, revision, readMetadata]);
+  }, [mode, role, requestedRider, walletAddress, program, revision, readMetadata]);
 
   useEffect(() => {
     if (mode !== 'connected' || !requestedRider) return;
@@ -186,6 +234,6 @@ export function useConnectedData(role: string): IntegrationView {
   return {
     mode, setMode, cluster, state, snapshot: visibleSnapshot, status: visibleStatus, error,
     riderInput, setRiderInput, loadRider, selectedExpenseId, selectExpense, refresh,
-    walletAddress, writing, seasonTitle: metadata.seasonTitle, runRiderAction,
+    walletAddress, writing, seasonTitle: metadata.seasonTitle, runRiderAction, runMerchantAction,
   };
 }

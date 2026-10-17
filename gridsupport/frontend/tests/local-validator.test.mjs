@@ -5,9 +5,10 @@ import {BN} from '@anchor-lang/core';
 import {createGridProgram} from '../src/chain/program.ts';
 import {fetchRiderSnapshot} from '../src/chain/accounts.ts';
 import {initializeRider, createSeason, addExpense} from '../src/chain/riderTransactions.ts';
+import {sponsorExpense} from '../src/chain/merchantTransactions.ts';
 import {sha256Text} from '../src/chain/metadata.ts';
 import {explorerTransactionUrl} from '../src/chain/explorer.ts';
-import {expensePda} from '../src/chain/pdas.ts';
+import {expensePda, sponsorshipPda} from '../src/chain/pdas.ts';
 
 const rpc = process.env.GRIDSUPPORT_LOCAL_RPC;
 test('signed Rider workflow on an isolated local validator', {skip: !rpc}, async () => {
@@ -80,4 +81,88 @@ test('signed Rider workflow on an isolated local validator', {skip: !rpc}, async
   await assert.rejects(connection.sendRawTransaction(wrongTransaction.serialize(), {skipPreflight: false}), /Simulation failed|custom program error|ConstraintSeeds/i);
   assert.equal((await fetchRiderSnapshot(program, rider.publicKey)).expenses.length, 2);
   console.log('Local validator confirmed Rider signatures:', [profile.signature, season.signature, first.signature, second.signature].join(' '));
+});
+
+test('signed Shop sponsorship workflow on an isolated local validator', {skip: !rpc}, async () => {
+  const connection = new Connection(rpc, 'confirmed');
+  const rider = Keypair.generate();
+  const merchant = Keypair.generate();
+  const otherRider = Keypair.generate();
+  for (const signer of [rider, merchant, otherRider]) {
+    const signature = await connection.requestAirdrop(signer.publicKey, 2_000_000_000);
+    const latest = await connection.getLatestBlockhash('confirmed');
+    assert.equal((await connection.confirmTransaction({signature, ...latest}, 'confirmed')).value.err, null);
+  }
+  const program = createGridProgram(connection);
+  const sendBy = signer => async transaction => {
+    assert(transaction instanceof Transaction);
+    assert(transaction.feePayer.equals(signer.publicKey));
+    transaction.sign(signer);
+    return connection.sendRawTransaction(transaction.serialize(), {skipPreflight: false, preflightCommitment: 'confirmed'});
+  };
+  const riderCtx = {program, connection, rider: rider.publicKey, send: sendBy(rider), onProgress: () => {}};
+  await initializeRider(riderCtx);
+  const season = await createSeason(riderCtx, 10000, 'Shop test season');
+  const expense = await addExpense(riderCtx, 10000, 1, 'Real in-kind need');
+  const otherCtx = {program, connection, rider: otherRider.publicKey, send: sendBy(otherRider), onProgress: () => {}};
+  await initializeRider(otherCtx);
+  const otherSeason = await createSeason(otherCtx, 10000, 'Other season');
+  const progress = [];
+  const shopCtx = {program, connection, merchant: merchant.publicKey, send: sendBy(merchant), onProgress: value => progress.push(value.stage)};
+  const initial = await fetchRiderSnapshot(program, rider.publicKey);
+  assert.equal(initial.expenses[0].committedCoverageCents, 0n);
+  assert.equal(initial.expenses[0].estimatedCostCents - initial.expenses[0].committedCoverageCents, 10000n);
+
+  const first = await sponsorExpense(shopCtx, rider.publicKey, expense.address, 1234);
+  assert.equal(first.address.toBase58(), sponsorshipPda(expense.address, 0n).toBase58());
+  assert.equal(first.snapshot.expenses[0].committedCoverageCents, 1234n);
+  assert.equal(first.snapshot.expenses[0].sponsorships[0].merchant.toBase58(), merchant.publicKey.toBase58());
+  assert.equal(first.snapshot.expenses[0].sponsorships[0].amountCents, 1234n);
+  assert.deepEqual(progress, ['awaiting-wallet', 'submitted', 'confirming', 'verifying']);
+  assert.match(explorerTransactionUrl(first.signature, 'localnet', rpc), /cluster=custom/);
+  const second = await sponsorExpense(shopCtx, rider.publicKey, expense.address, 67);
+  assert.equal(second.address.toBase58(), sponsorshipPda(expense.address, 1n).toBase58());
+  assert.notEqual(first.address.toBase58(), second.address.toBase58());
+  assert.equal(second.snapshot.expenses[0].committedCoverageCents, 1301n);
+  assert.equal(second.snapshot.expenses[0].estimatedCostCents - second.snapshot.expenses[0].committedCoverageCents, 8699n);
+  assert.equal(second.snapshot.expenses[0].sponsorships.length, 2);
+  await assert.rejects(sponsorExpense(shopCtx, rider.publicKey, expense.address, 0), /positive sponsorship/);
+  await assert.rejects(sponsorExpense(shopCtx, rider.publicKey, expense.address, -1), /positive sponsorship/);
+  await assert.rejects(sponsorExpense(shopCtx, rider.publicKey, expense.address, 1.5), /exact EUR cents/);
+  await assert.rejects(sponsorExpense(shopCtx, rider.publicKey, expense.address, 8700), /remain/);
+  await assert.rejects(sponsorExpense(shopCtx, otherRider.publicKey, expense.address, 1), /belonging to this rider/);
+  const rejectedCtx = {...shopCtx, send: async () => {throw new Error('User rejected the request')}};
+  await assert.rejects(sponsorExpense(rejectedCtx, rider.publicKey, expense.address, 1), /rejected/);
+  assert.equal((await fetchRiderSnapshot(program, rider.publicKey)).expenses[0].sponsorshipCount, 2n);
+
+  const rawSponsor = async (amount, accounts, signer = merchant) => {
+    const instruction = await program.methods.sponsorExpense(new BN(amount)).accountsStrict(accounts).instruction();
+    const latest = await connection.getLatestBlockhash('confirmed');
+    const transaction = new Transaction({feePayer: merchant.publicKey, blockhash: latest.blockhash, lastValidBlockHeight: latest.lastValidBlockHeight}).add(instruction);
+    transaction.sign(signer);
+    return connection.sendRawTransaction(transaction.serialize(), {skipPreflight: false, preflightCommitment: 'confirmed'});
+  };
+  const accounts = {merchant: merchant.publicKey, season: season.address, expense: expense.address,
+    sponsorship: sponsorshipPda(expense.address, 2n), systemProgram: SystemProgram.programId};
+  await assert.rejects(rawSponsor(0, accounts), /Simulation failed|custom program error/i);
+  await assert.rejects(rawSponsor(8700, accounts), /Simulation failed|custom program error/i);
+  await assert.rejects(rawSponsor(1, {...accounts, season: otherSeason.address}), /Simulation failed|custom program error|ConstraintSeeds/i);
+  await assert.rejects(rawSponsor(1, {...accounts, sponsorship: sponsorshipPda(expense.address, 99n)}), /Simulation failed|custom program error|ConstraintSeeds/i);
+  const wrongSignerInstruction = await program.methods.sponsorExpense(new BN(1)).accountsStrict({...accounts, merchant: otherRider.publicKey}).instruction();
+  const latest = await connection.getLatestBlockhash('confirmed');
+  const wrongSigner = new Transaction({feePayer: merchant.publicKey, blockhash: latest.blockhash, lastValidBlockHeight: latest.lastValidBlockHeight}).add(wrongSignerInstruction);
+  wrongSigner.sign(merchant);
+  assert.throws(() => wrongSigner.serialize(), /signature verification failed/i);
+  assert.equal((await fetchRiderSnapshot(program, rider.publicKey)).expenses[0].sponsorshipCount, 2n);
+
+  const full = await sponsorExpense(shopCtx, rider.publicKey, expense.address, 8699);
+  assert.equal(full.snapshot.expenses[0].committedCoverageCents, 10000n);
+  assert.equal(full.snapshot.expenses[0].estimatedCostCents - full.snapshot.expenses[0].committedCoverageCents, 0n);
+  await assert.rejects(sponsorExpense(shopCtx, rider.publicKey, expense.address, 1), /fully covered/);
+  await assert.rejects(rawSponsor(1, {...accounts, sponsorship: sponsorshipPda(expense.address, 3n)}), /Simulation failed|custom program error/i);
+  const riderRead = await fetchRiderSnapshot(program, rider.publicKey);
+  const shopRead = await fetchRiderSnapshot(program, rider.publicKey);
+  assert.equal(riderRead.expenses[0].committedCoverageCents, shopRead.expenses[0].committedCoverageCents);
+  assert.equal(riderRead.expenses[0].sponsorships.length, 3);
+  console.log('Local validator confirmed Shop signatures:', [first.signature, second.signature, full.signature].join(' '));
 });

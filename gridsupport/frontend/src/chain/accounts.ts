@@ -13,6 +13,7 @@ type RawSponsorship = {expense: PublicKey; merchant: PublicKey; sponsorshipId: I
 
 export type ChainSponsorship = {
   address: PublicKey;
+  expense: PublicKey;
   merchant: PublicKey;
   amountCents: bigint;
   createdAt: bigint;
@@ -112,7 +113,7 @@ export async function fetchRiderSnapshot(program: Program<Gridsupport>, rider: P
         throw new Error(`Sponsorship #${sponsorshipIndex} has inconsistent account data.`);
       }
       return {
-        address: sponsorshipAddresses[sponsorshipIndex], merchant: sponsorship.merchant,
+        address: sponsorshipAddresses[sponsorshipIndex], expense: sponsorship.expense, merchant: sponsorship.merchant,
         amountCents: BigInt(sponsorship.amountCents.toString()),
         createdAt: BigInt(sponsorship.createdAt.toString()),
         sponsorshipId: BigInt(sponsorship.sponsorshipId.toString()),

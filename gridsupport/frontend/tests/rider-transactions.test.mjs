@@ -38,6 +38,38 @@ test('Rider adapter sends a wallet transaction, confirms it, then refreshes and 
   assert.equal(sends, 1);
 });
 
+test('Rider success waits for account visibility and never reports a failed confirmation as success', async () => {
+  const rider = Keypair.generate().publicKey;
+  const connection = new Connection('http://127.0.0.1:8899', 'confirmed');
+  const program = createGridProgram(connection);
+  const profileAddress = riderProfilePda(rider);
+  const profileData = await program.coder.accounts.encode('riderProfile', {rider, bump: 1});
+  let confirmed = false;
+  let readsAfterConfirmation = 0;
+  connection.getAccountInfo = async address => {
+    if (address.equals(program.programId)) return {data: Buffer.alloc(0), owner: SystemProgram.programId, executable: true};
+    if (!address.equals(profileAddress) || !confirmed) return null;
+    readsAfterConfirmation++;
+    return readsAfterConfirmation >= 2 ? {data: profileData, owner: program.programId, executable: false} : null;
+  };
+  connection.getLatestBlockhash = async () => ({blockhash: Keypair.generate().publicKey.toBase58(), lastValidBlockHeight: 100});
+  connection.confirmTransaction = async () => {confirmed = true;return {value: {err: null}}};
+  const stages = [];
+  const context = {program, connection, rider, send: async () => '2'.repeat(88), onProgress: value => stages.push(value.stage)};
+  const result = await initializeRider(context);
+  assert.equal(result.snapshot.profileExists, true);
+  assert.equal(readsAfterConfirmation, 2);
+  assert.deepEqual(stages, ['awaiting-wallet', 'submitted', 'confirming']);
+
+  confirmed = false;
+  readsAfterConfirmation = 0;
+  stages.length = 0;
+  connection.confirmTransaction = async () => ({value: {err: {InstructionError: [0, 'Custom']}}});
+  await assert.rejects(initializeRider(context), /failed/);
+  assert.equal(readsAfterConfirmation, 0);
+  assert.deepEqual(stages, ['awaiting-wallet', 'submitted', 'confirming']);
+});
+
 test('metadata uses exact trimmed UTF-8 SHA-256 bytes and rejects tampered descriptions', async () => {
   const source=' Tyres € 🏁 ';
   const hash=await sha256Text(source);

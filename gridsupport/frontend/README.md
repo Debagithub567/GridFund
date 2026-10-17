@@ -1,4 +1,4 @@
-# GridSupport frontend — Stage 4B Step 3
+# GridSupport frontend — Stage 4B Step 4
 
 React 19, TypeScript, Vite, Framer Motion, and Solana wallet adapter. The approved Stage 4A presentation remains available in Demo mode.
 
@@ -14,7 +14,17 @@ The top-right button connects Phantom or another supported detected wallet. On `
 
 Every Rider action requests a wallet signature. The modal shows approval, submission, confirmation, and account verification progress. Success appears only after the transaction confirms and the new account is fetched. The signature links to the configured network in Solana Explorer. Localnet uses a custom Explorer URL; a locally running RPC is required to inspect it. The rider wallet needs enough SOL for account rent and fees. Devnet writes require the existing program ID to be deployed on Devnet; this step does not deploy it.
 
-Shop and Fan Connected views read public Rider data by wallet address. Merchant in-kind coverage is taken from on-chain Expense accounts. Direct fan mock-USDC transfers remain separate from expense coverage. Their Connected mode transaction buttons are disabled until Step 4.
+After verification, Connected mode replaces its account snapshot automatically, including the new profile, season or expense. The new expense becomes selected. A rejected wallet request or failed confirmation does not show success. If a wallet changes while a transaction is in flight, reconnect the original rider wallet and refresh its accounts before continuing.
+
+Shop and Fan Connected views read public Rider data by wallet address. Merchant in-kind coverage is taken from on-chain Expense accounts. Direct fan mock-USDC transfers remain separate from expense coverage. Fan Connected mode transactions remain disabled until Step 5.
+
+## Connected Shop sponsorship workflow
+
+On `/shop`, choose **Connected**, connect a merchant wallet, enter the rider's public wallet address, and load their on-chain expenses. Select an expense and enter any positive EUR amount with up to two decimal places, no greater than the displayed remaining merchant coverage. **Record Sponsorship** asks the merchant wallet to sign and pay the Solana transaction fee. It records an in-kind commitment; the instruction transfers no SOL or tokens and does not verify delivery of goods or services. The rider does not sign.
+
+The app re-reads the expense immediately before building the instruction, derives the next canonical sponsorship PDA from its current sponsorship count, confirms the signature, and re-reads both the sponsorship and expense before showing **Sponsorship Recorded!**. The modal shows the actual signature, network and Explorer link. A rejected signature, failed transaction, changed wallet, or unverified account cannot show success. Failed submissions trigger an account refresh, including when another merchant has filled the expense first. A fully covered expense cannot be sponsored again. Repeated valid commitments by the same merchant create separate sponsorship accounts.
+
+Shop and Rider views use the same program accounts for merchant coverage; Demo support and fan token transfers are excluded. Successful Shop submissions refresh the current dashboard immediately. Other sessions and wallets can use **Refresh Accounts** or wait for the 20-second account poll. This is polling, not real-time synchronization.
 
 ## Readable metadata
 
@@ -37,3 +47,20 @@ solana-test-validator --ledger "$(mktemp -d /tmp/gridsupport-step3.XXXXXX)" \
 In another terminal, from `frontend/`, run `GRIDSUPPORT_LOCAL_RPC=http://127.0.0.1:8899 npm run test:local-validator`. The test generates and funds temporary test keypairs only on that local validator. It does not use the configured CLI wallet. Stop the validator when finished.
 
 The frontend bundles the generated IDL and type in `src/chain/`. Sync both after any future Anchor interface change; frontend tests compare the bundled IDL to `target/idl/gridsupport.json`.
+
+## Step 3 verification (17 October 2026)
+
+- Frontend regression suite: 16 passed, 0 failed. This includes Demo amount/persistence rules, the Community Impact interaction, Shop/Fan and Connected dashboard behavior, IDL/account decoding, wallet transaction progress, delayed account visibility, and confirmation failure.
+- Frontend production build and TypeScript check: passed. Vite reports one bundle-size advisory for the main JavaScript chunk.
+- Root typecheck: passed. Root IDL suite: 3 passed, 0 failed. LiteSVM integration suite: 24 passed, 0 failed. Rider structural Rust suite: 5 passed, 0 failed.
+- Fresh isolated local-validator workflow: 1 passed, 0 failed. It confirmed RiderProfile, Season and two distinct custom-amount Expense transactions and checked duplicate, invalid input, wrong signer/PDA and rejected-wallet cases. Temporary test wallets were funded only by that validator, which was stopped after the run.
+
+The tests use a generated test wallet, not a browser wallet extension. A manual wallet-extension pass and Devnet deployment remain outside this local verification.
+
+## Step 4 verification (17 October 2026)
+
+- Frontend regression suite: 18 passed, 0 failed, including Shop adapter account order, confirmation/verification failure, duplicate-click prevention, Connected coverage display, and Step 3 Rider regressions.
+- Isolated local validator: 2 passed, 0 failed (Rider workflow and Shop workflow). The Shop case confirmed three sponsorship transactions and checked custom cents, PDA sequence, coverage and remaining amounts, repeated/full sponsorship, signer and PDA failures, wrong season, wallet rejection, and matching Rider/Shop reads.
+- Frontend TypeScript and production build, root typecheck, root IDL suite (3 passed), LiteSVM integration suite (24 passed), and Rider structural suite (5 passed): passed.
+
+Only temporary validator wallets were used. No Devnet deployment or browser wallet-extension transaction was performed.
