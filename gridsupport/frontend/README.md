@@ -1,10 +1,10 @@
-# GridSupport frontend — Stage 4B Step 4
+# GridSupport frontend — Stage 4B Step 5
 
 React 19, TypeScript, Vite, Framer Motion, and Solana wallet adapter. The approved Stage 4A presentation remains available in Demo mode.
 
 ## Run
 
-Use Node 22.18+ or 24. From `frontend/`, run `npm ci`, copy `.env.example` to `.env.local`, and run `npm run dev`. Set `VITE_SOLANA_CLUSTER=localnet` or `devnet`; localnet is the default. An optional `VITE_SOLANA_RPC_URL` overrides the RPC. Set your wallet extension to the same network. `VITE_RIDER_PUBLIC_KEY` can preload the public Shop and Fan read views. Never put a private key in a frontend environment file.
+Use Node 22.18+ or 24. From `frontend/`, run `npm ci`, copy `.env.example` to `.env.local`, and run `npm run dev`. Set `VITE_SOLANA_CLUSTER=localnet` or `devnet`; localnet is the default. An optional `VITE_SOLANA_RPC_URL` overrides the RPC. A signing wallet must support the selected network; Phantom does not offer a custom local validator network. `VITE_RIDER_PUBLIC_KEY` can preload the public Shop and Fan read views. Never put a private key in a frontend environment file.
 
 Routes: `/`, `/racer`, `/shop`, `/fan`. Static hosting needs an `index.html` SPA fallback. Photos and the optional victory MP4 are under `public/`.
 
@@ -16,7 +16,7 @@ Every Rider action requests a wallet signature. The modal shows approval, submis
 
 After verification, Connected mode replaces its account snapshot automatically, including the new profile, season or expense. The new expense becomes selected. A rejected wallet request or failed confirmation does not show success. If a wallet changes while a transaction is in flight, reconnect the original rider wallet and refresh its accounts before continuing.
 
-Shop and Fan Connected views read public Rider data by wallet address. Merchant in-kind coverage is taken from on-chain Expense accounts. Direct fan mock-USDC transfers remain separate from expense coverage. Fan Connected mode transactions remain disabled until Step 5.
+Shop and Fan Connected views read public Rider data by wallet address. Merchant in-kind coverage is taken from on-chain Expense accounts. Direct fan mock-USDC transfers remain separate from expense coverage.
 
 ## Connected Shop sponsorship workflow
 
@@ -25,6 +25,14 @@ On `/shop`, choose **Connected**, connect a merchant wallet, enter the rider's p
 The app re-reads the expense immediately before building the instruction, derives the next canonical sponsorship PDA from its current sponsorship count, confirms the signature, and re-reads both the sponsorship and expense before showing **Sponsorship Recorded!**. The modal shows the actual signature, network and Explorer link. A rejected signature, failed transaction, changed wallet, or unverified account cannot show success. Failed submissions trigger an account refresh, including when another merchant has filled the expense first. A fully covered expense cannot be sponsored again. Repeated valid commitments by the same merchant create separate sponsorship accounts.
 
 Shop and Rider views use the same program accounts for merchant coverage; Demo support and fan token transfers are excluded. Successful Shop submissions refresh the current dashboard immediately. Other sessions and wallets can use **Refresh Accounts** or wait for the 20-second account poll. This is polling, not real-time synchronization.
+
+## Connected Fan contribution workflow
+
+On `/fan`, choose **Connected**, connect a fan wallet, and load the recipient RiderProfile by public wallet address. The recipient address and current fan/rider token account balances appear above the amount field. Enter a positive mock-USDC amount with at most six decimal places and click **Support Rider**. The fan needs local SOL for fees and, if missing, creation of the rider's canonical associated token account (ATA). The app never mints tokens to a connected wallet.
+
+The local build approves only the dedicated six-decimal standard SPL Token mint `6Ckm2BrnXxsSjyG5b17kQQRjoECVrts92RKXVGT8XeqS`. The default program build has no approved mint; Fan writes are unavailable on Devnet until a reviewed mint and program deployment are separately approved. The app checks the mint, fan source account and rider ATA, then requests one wallet signature for ATA creation if needed and `contribute_direct`. It waits for confirmation, verifies the exact source debit and destination credit in that transaction's token balance metadata, and refreshes both displayed balances before showing **Contribution Transferred!** with the real signature and Explorer link. A rejected or unverifiable transaction cannot show success.
+
+Expense selection in Connected Fan mode is optional presentation context. The transfer goes directly to the rider wallet and creates no expense attribution, merchant sponsorship, EUR valuation or merchant coverage. The rider ATA balance is a current balance, not a lifetime contribution total. Other sessions can use **Refresh Accounts** or wait for the 20-second poll.
 
 ## Readable metadata
 
@@ -36,15 +44,13 @@ Demo mode uses its existing, separate `gridsupport-stage4a-v1` browser state. Sw
 
 From `frontend/`: `npm test` and `npm run build` (the latter includes TypeScript). From the repository root: `npm run typecheck`, `npm run test:idl`, and `npm test` for the Anchor/LiteSVM suite.
 
-To run the optional full RPC workflow test, start an isolated local validator from the repository root with the existing SBF artifact:
+To run the full Rider, Shop and Fan RPC workflow test, start an isolated local validator from the repository root:
 
 ```sh
-solana-test-validator --ledger "$(mktemp -d /tmp/gridsupport-step3.XXXXXX)" \
-  --bpf-program H98fSKptEE9rVR11K75GY5xdUkDk8bEGYsyjuosX9wVQ \
-  target/deploy/gridsupport.so --rpc-port 8899
+bash scripts/start-local-fan-validator.sh /tmp/gridsupport-fan-step5
 ```
 
-In another terminal, from `frontend/`, run `GRIDSUPPORT_LOCAL_RPC=http://127.0.0.1:8899 npm run test:local-validator`. The test generates and funds temporary test keypairs only on that local validator. It does not use the configured CLI wallet. Stop the validator when finished.
+In another terminal, from `frontend/`, run `GRIDSUPPORT_LOCAL_RPC=http://127.0.0.1:8899 GRIDSUPPORT_LOCAL_MINT_AUTHORITY=/tmp/gridsupport-fan-step5/mint-authority.json npm run test:local-validator`. The test generates and funds temporary test keypairs only on that local validator. It does not use the configured CLI wallet. Stop the validator with Ctrl-C; the launcher restores the default SBF build. The [Step 5 local guide](../docs/architecture/STAGE4B_STEP5_LOCAL_GUIDE.md) covers funding, balances, and the Phantom browser limitation.
 
 The frontend bundles the generated IDL and type in `src/chain/`. Sync both after any future Anchor interface change; frontend tests compare the bundled IDL to `target/idl/gridsupport.json`.
 
@@ -64,3 +70,11 @@ The tests use a generated test wallet, not a browser wallet extension. A manual 
 - Frontend TypeScript and production build, root typecheck, root IDL suite (3 passed), LiteSVM integration suite (24 passed), and Rider structural suite (5 passed): passed.
 
 Only temporary validator wallets were used. No Devnet deployment or browser wallet-extension transaction was performed.
+
+## Step 5 verification (17 October 2026)
+
+- Frontend regression suite: 20 passed, 0 failed, including Fan amount parsing, Connected Fan UI, Demo isolation and existing Rider/Shop regressions. Frontend TypeScript and production build passed.
+- Isolated local validator: 3 passed, 0 failed (Rider, Shop and Fan workflows). The Fan case confirmed a `1.234432` gsUSDC transfer: fan `100.000000 → 98.765568`, rider `0 → 1.234432`; merchant coverage stayed at zero. It also exercised the requested Fan rejection cases.
+- Root typecheck passed. IDL suite: 3 passed, 0 failed; LiteSVM integration suite: 24 passed, 0 failed; default-mint regression: 1 passed, 0 failed; Rider/Shop structural Rust suite: 5 passed, 0 failed.
+
+Only temporary local validator wallets were used. Phantom has no custom local validator RPC setting, so a browser wallet-extension transaction was not performed. No Devnet deployment was made.

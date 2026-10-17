@@ -6,11 +6,12 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "tsc --noEmit && vite build",
-    "test": "node --test tests/model.test.mjs tests/impact-ui.test.mjs && node --import tsx --test tests/chain.test.mjs tests/rider-transactions.test.mjs tests/shop-transactions.test.mjs",
+    "test": "node --test tests/model.test.mjs tests/impact-ui.test.mjs && node --import tsx --test tests/chain.test.mjs tests/rider-transactions.test.mjs tests/shop-transactions.test.mjs tests/fan-transactions.test.mjs",
     "test:local-validator": "node --import tsx --test tests/local-validator.test.mjs"
   },
   "dependencies": {
     "@anchor-lang/core": "^1.2.0",
+    "@solana/spl-token": "^0.4.14",
     "@solana/wallet-adapter-base": "^0.9.28",
     "@solana/wallet-adapter-phantom": "^0.9.30",
     "@solana/wallet-adapter-react": "^0.15.40",

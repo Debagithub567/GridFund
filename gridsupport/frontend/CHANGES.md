@@ -27,3 +27,10 @@ Initialized animation timing from the first animation-frame callback and clamped
 - Shop coverage and remaining amounts refresh from program accounts. Rider and Shop read the same confirmed sponsorships; other sessions have a visible refresh button and 20-second polling.
 - Added exact-cent validation, pending and duplicate-submission guards, wallet and RPC failure handling, and a distinct recorded-sponsorship result message. Demo support and Fan Connected writes remain separate.
 - Added Shop adapter, dashboard, and isolated local-validator regressions without changing the program, PDA seeds, landing page, Community Impact, or victory media.
+
+## Stage 4B Step 5 — Fan mock-USDC contribution
+
+- Connected Fan now submits the existing `contribute_direct` instruction against the pinned local six-decimal standard SPL mint. It validates exact base-unit amounts, fan source balance and ownership, the recipient's canonical ATA, and wallet approval. A missing rider ATA is created in the signed transaction.
+- The success modal appears only after confirmation, signature-specific source debit and rider credit verification, and refreshed token balances. It displays the actual amount, rider address, network, signature and Explorer link. Pending submissions cannot be duplicated.
+- Connected Fan labels expense selection as optional presentation context. Token transfers do not change merchant coverage or imply a EUR value. Demo mode, landing page, Community Impact and media remain separate.
+- Added a repeatable local mint/validator fixture and Fan unit, UI and isolated RPC tests. The default program mint stays unconfigured; no Devnet mint or deployment was created.

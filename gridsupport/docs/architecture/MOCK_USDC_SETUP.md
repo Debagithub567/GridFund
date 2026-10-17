@@ -4,7 +4,7 @@ GridSupport Mock USDC (`gsUSDC`) is a demo label for a dedicated six-decimal **s
 
 ## Local test configuration
 
-`local-test-mint` is an explicit Cargo feature. It pins the deterministic address represented by `[77; 32]` and LiteSVM creates a real serialized standard SPL Mint account at that address, with six decimals and funded token accounts. This address is only a local fixture, never a Devnet candidate. Run:
+`local-test-mint` is an explicit Cargo feature. It pins the deterministic address represented by `[77; 32]`, `6Ckm2BrnXxsSjyG5b17kQQRjoECVrts92RKXVGT8XeqS`. LiteSVM and the isolated local validator both use a real serialized standard SPL Mint account at that address, with six decimals. This address is only a local fixture, never a Devnet candidate. Run:
 
 ```bash
 anchor build --arch v0 --tools-version v1.54 -- --features local-test-mint
@@ -17,6 +17,8 @@ The local test build overwrites `target/deploy/gridsupport.so`. Rebuild without 
 anchor build --arch v0 --tools-version v1.54
 cargo test --offline
 ```
+
+For a repeatable local RPC fixture, run `bash scripts/start-local-fan-validator.sh /tmp/gridsupport-fan-step5` from the repository root. The launcher builds with `local-test-mint`, creates the pinned mint account and a temporary mint authority in the supplied directory, loads both the mint and local program into a fresh validator, and restores the default SBF build when stopped with Ctrl-C. The frontend local-validator test uses that authority to mint test tokens only into its temporary fan account. See the [Step 5 local guide](STAGE4B_STEP5_LOCAL_GUIDE.md) for exact commands and balance inspection. The fixture authority is a local test secret; keep its directory out of Git.
 
 Never deploy the local test artifact. The default build remains fail closed until a verified mint is pinned in `programs/gridsupport/src/constants.rs` under `#[cfg(not(feature = "local-test-mint"))]`.
 

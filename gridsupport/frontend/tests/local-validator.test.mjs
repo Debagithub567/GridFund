@@ -2,15 +2,19 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {Connection, Keypair, PublicKey, SystemProgram, Transaction} from '@solana/web3.js';
 import {BN} from '@anchor-lang/core';
+import {readFileSync} from 'node:fs';
+import {getAccount, getAssociatedTokenAddressSync, getOrCreateAssociatedTokenAccount, mintTo, TOKEN_PROGRAM_ID} from '@solana/spl-token';
 import {createGridProgram} from '../src/chain/program.ts';
 import {fetchRiderSnapshot} from '../src/chain/accounts.ts';
 import {initializeRider, createSeason, addExpense} from '../src/chain/riderTransactions.ts';
 import {sponsorExpense} from '../src/chain/merchantTransactions.ts';
+import {contributeDirect, parseMockUsdc, LOCAL_MOCK_USDC_MINT} from '../src/chain/fanTransactions.ts';
 import {sha256Text} from '../src/chain/metadata.ts';
 import {explorerTransactionUrl} from '../src/chain/explorer.ts';
-import {expensePda, sponsorshipPda} from '../src/chain/pdas.ts';
+import {expensePda, sponsorshipPda, riderProfilePda} from '../src/chain/pdas.ts';
 
 const rpc = process.env.GRIDSUPPORT_LOCAL_RPC;
+const mintAuthorityPath = process.env.GRIDSUPPORT_LOCAL_MINT_AUTHORITY;
 test('signed Rider workflow on an isolated local validator', {skip: !rpc}, async () => {
   const connection = new Connection(rpc, 'confirmed');
   const rider = Keypair.generate();
@@ -81,6 +85,72 @@ test('signed Rider workflow on an isolated local validator', {skip: !rpc}, async
   await assert.rejects(connection.sendRawTransaction(wrongTransaction.serialize(), {skipPreflight: false}), /Simulation failed|custom program error|ConstraintSeeds/i);
   assert.equal((await fetchRiderSnapshot(program, rider.publicKey)).expenses.length, 2);
   console.log('Local validator confirmed Rider signatures:', [profile.signature, season.signature, first.signature, second.signature].join(' '));
+});
+
+test('signed Fan mock-USDC transfer on an isolated local validator', {skip: !rpc || !mintAuthorityPath}, async () => {
+  const connection = new Connection(rpc, 'confirmed');
+  const authority = Keypair.fromSecretKey(Uint8Array.from(JSON.parse(readFileSync(mintAuthorityPath, 'utf8'))));
+  const rider = Keypair.generate();
+  const fan = Keypair.generate();
+  for (const signer of [authority, rider, fan]) {
+    const signature = await connection.requestAirdrop(signer.publicKey, 2_000_000_000);
+    const latest = await connection.getLatestBlockhash('confirmed');
+    assert.equal((await connection.confirmTransaction({signature, ...latest}, 'confirmed')).value.err, null);
+  }
+  const program = createGridProgram(connection);
+  const sendBy = signer => async transaction => {
+    assert(transaction instanceof Transaction);
+    assert(transaction.feePayer.equals(signer.publicKey));
+    transaction.sign(signer);
+    return connection.sendRawTransaction(transaction.serialize(), {skipPreflight: false, preflightCommitment: 'confirmed'});
+  };
+  const riderCtx = {program, connection, rider: rider.publicKey, send: sendBy(rider), onProgress: () => {}};
+  await initializeRider(riderCtx);
+  await createSeason(riderCtx, 50000, 'Fan token test');
+  await addExpense(riderCtx, 50000, 1, 'Merchant coverage remains separate');
+  const fanToken = await getOrCreateAssociatedTokenAccount(connection, authority, LOCAL_MOCK_USDC_MINT, fan.publicKey);
+  await mintTo(connection, authority, LOCAL_MOCK_USDC_MINT, fanToken.address, authority, 100_000_000n);
+  const riderAta = getAssociatedTokenAddressSync(LOCAL_MOCK_USDC_MINT, rider.publicKey);
+  assert.equal(await connection.getAccountInfo(riderAta, 'confirmed'), null);
+  assert.equal((await getAccount(connection, fanToken.address)).amount, 100_000_000n);
+  const progress = [];
+  const ctx = {program, connection, fan: fan.publicKey, send: sendBy(fan), onProgress: value => progress.push(value.stage)};
+  const amount = parseMockUsdc('1.234432');
+  const transferred = await contributeDirect(ctx, rider.publicKey, amount);
+  assert.deepEqual(progress, ['awaiting-wallet', 'submitted', 'confirming', 'verifying']);
+  assert.equal(transferred.balances.fan, 98_765_568n);
+  assert.equal(transferred.balances.rider, amount);
+  assert.equal((await getAccount(connection, fanToken.address)).amount, 98_765_568n);
+  assert.equal((await getAccount(connection, riderAta)).amount, amount);
+  assert.match(explorerTransactionUrl(transferred.signature, 'localnet', rpc), /cluster=custom/);
+  assert.equal((await fetchRiderSnapshot(program, rider.publicKey)).expenses[0].committedCoverageCents, 0n);
+  await assert.rejects(contributeDirect(ctx, rider.publicKey, 0n), /positive/);
+  await assert.rejects(contributeDirect(ctx, rider.publicKey, 200_000_000n), /Insufficient/);
+  const missingCtx = {...ctx, fan: Keypair.generate().publicKey};
+  await assert.rejects(contributeDirect(missingCtx, rider.publicKey, 1n), /missing/);
+  const rejectedCtx = {...ctx, send: async () => {throw new Error('User rejected the request')}};
+  await assert.rejects(contributeDirect(rejectedCtx, rider.publicKey, 1n), /rejected/);
+
+  const accounts = {fan: fan.publicKey, riderProfile: riderProfilePda(rider.publicKey), mockUsdcMint: LOCAL_MOCK_USDC_MINT,
+    fanTokenAccount: fanToken.address, riderTokenAccount: riderAta, tokenProgram: TOKEN_PROGRAM_ID};
+  const badRaw = async (overrides, signer = fan) => {
+    const instruction = await program.methods.contributeDirect(new BN(1)).accountsStrict({...accounts, ...overrides}).instruction();
+    const latest = await connection.getLatestBlockhash('confirmed');
+    const transaction = new Transaction({feePayer: fan.publicKey, blockhash: latest.blockhash, lastValidBlockHeight: latest.lastValidBlockHeight}).add(instruction);
+    transaction.sign(signer);
+    return connection.sendRawTransaction(transaction.serialize(), {skipPreflight: false});
+  };
+  await assert.rejects(badRaw({mockUsdcMint: Keypair.generate().publicKey}), /Simulation failed|custom program error/i);
+  await assert.rejects(badRaw({tokenProgram: SystemProgram.programId}), /Simulation failed|custom program error/i);
+  await assert.rejects(badRaw({riderTokenAccount: fanToken.address}), /Simulation failed|custom program error/i);
+  const wrongSignerInstruction = await program.methods.contributeDirect(new BN(1)).accountsStrict({...accounts, fan: Keypair.generate().publicKey}).instruction();
+  const latest = await connection.getLatestBlockhash('confirmed');
+  const wrongSigner = new Transaction({feePayer: fan.publicKey, blockhash: latest.blockhash, lastValidBlockHeight: latest.lastValidBlockHeight}).add(wrongSignerInstruction);
+  wrongSigner.sign(fan);
+  assert.throws(() => wrongSigner.serialize(), /signature verification failed/i);
+  assert.equal((await getAccount(connection, fanToken.address)).amount, 98_765_568n);
+  assert.equal((await getAccount(connection, riderAta)).amount, amount);
+  console.log('Local validator confirmed Fan signature:', transferred.signature);
 });
 
 test('signed Shop sponsorship workflow on an isolated local validator', {skip: !rpc}, async () => {

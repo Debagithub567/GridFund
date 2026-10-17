@@ -10,6 +10,7 @@ await fs.mkdir(path.join(output,'chain'),{recursive:true});
 await fs.writeFile(path.join(output,'chain/categories.mjs'),"export const expenseCategories=[{value:0,label:'General race need'}];\n");
 await fs.writeFile(path.join(output,'chain/config.mjs'),"export const endpoint='http://127.0.0.1:8899';\n");
 await fs.writeFile(path.join(output,'chain/riderTransactions.mjs'),"export const riderError=error=>String(error);\n");
+await fs.writeFile(path.join(output,'chain/fanTransactions.mjs'),"export const approvedMockMint={};export const parseMockUsdc=value=>BigInt(value)*1000000n;export const formatMockUsdc=value=>String(value/1000000n)+' gsUSDC';\n");
 const explorerSource=await fs.readFile('src/chain/explorer.ts','utf8');
 await fs.writeFile(path.join(output,'chain/explorer.mjs'),ts.transpileModule(explorerSource,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText);
 for(const name of ['model','DemoState','Dashboard','Modal','TransactionResultModal','CommunityImpact']){
@@ -125,6 +126,19 @@ test('click Community Impact opens its dialog and progresses without changing sa
  assert.match(document.querySelector('.dash-summary').textContent,/€200/,'Rider reads the same confirmed coverage');
  await renderDashboard('shop',{...confirmedView,state:{...confirmedView.state,expenses:[{...updatedExpense,committedCoverageCents:50000}]}});
  assert.equal(document.querySelector('.support-confirm').disabled,true,'fully covered on-chain expense cannot be sponsored');
+ let resolveFan;let fanCalls=0;
+ const fanIntegration={...confirmedView,state:{version:1,expenses:[],contributions:[],selectedExpenseId:''},
+  snapshot:{...confirmedView.snapshot,profileExists:true},tokenBalances:{fan:50000000n,rider:0n,riderAta:{toBase58:()=>wallet}},
+  runFanAction:()=>{fanCalls++;return new Promise(resolve=>{resolveFan=resolve})}};
+ await renderDashboard('fan',fanIntegration);
+ assert.equal(document.querySelector('.support-confirm').disabled,false,'Fan can support the rider without an expense or EUR coverage cap');
+ assert.match(document.querySelector('.support-form').textContent,/Recipient rider/);
+ await act(async()=>{document.querySelector('.support-confirm').click();document.querySelector('.support-confirm').click()});
+ assert.equal(fanCalls,1,'duplicate Fan clicks submit only once');
+ assert.equal(document.querySelector('.support-confirm').disabled,true);
+ await act(async()=>resolveFan({signature:'2'.repeat(88),rider:{toBase58:()=>wallet},balances:fanIntegration.tokenBalances}));
+ assert.match(document.querySelector('.transaction-modal').textContent,/Contribution Transferred!/);
+ assert.match(document.querySelector('.transaction-modal').textContent,/20 gsUSDC/);
  assert.equal(localStorage.getItem(STORAGE_KEY),JSON.stringify(state),'switching dashboards and modes preserves Demo data');
  }finally{await act(async()=>root.unmount());dom.window.close();await fs.rm(output,{recursive:true,force:true})}
 });

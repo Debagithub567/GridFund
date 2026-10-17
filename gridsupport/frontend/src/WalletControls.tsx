@@ -59,10 +59,10 @@ export function WalletButton() {
       <h2 id="wallet-title">{address ? 'WALLET CONNECTED' : 'CONNECT WALLET'}</h2>
       {address ? <>
         <p className="wallet-address">{address}</p>
-        <p>Connected through {wallet?.adapter.name}. Rider account creation requests a separate wallet approval.</p>
+        <p>Connected through {wallet?.adapter.name}. Rider, Shop, and Fan transactions each request a separate wallet approval.</p>
         <button type="button" className="cta" disabled={disconnecting} onClick={() => disconnect().catch(reason => setError(reason instanceof Error ? reason.message : 'Disconnect failed.'))}>DISCONNECT <X size={16}/></button>
       </> : <>
-        <p>Choose an installed Solana wallet. Connecting shares your public address. Rider transactions request a separate approval when you click Create.</p>
+        <p>Choose an installed Solana wallet. Connecting shares your public address. Transactions request a separate approval when you submit them.</p>
         {available.length ? <div className="wallet-options">{available.map(item => <button type="button" key={item.adapter.name}
           disabled={connecting} onClick={() => choose(item.adapter.name)}>
           <img src={item.adapter.icon} alt=""/><span>{item.adapter.name}</span><Check size={16}/>

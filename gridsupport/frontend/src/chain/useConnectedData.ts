@@ -10,6 +10,8 @@ import {addExpense, createSeason, initializeRider} from './riderTransactions';
 import type {RiderAction, RiderProgress, RiderTransactionResult} from './riderTransactions';
 import {sponsorExpense} from './merchantTransactions';
 import type {MerchantProgress, MerchantTransactionResult} from './merchantTransactions';
+import {contributeDirect, fetchTokenBalances, approvedMockMint} from './fanTransactions';
+import type {FanProgress, FanTransactionResult, TokenBalances} from './fanTransactions';
 import {saveExpenseMetadata, saveSeasonMetadata, verifiedExpenseMetadata, verifiedSeasonTitle} from './metadata';
 import type {VerifiedMetadata} from './metadata';
 
@@ -34,6 +36,9 @@ export type IntegrationView = {
   seasonTitle?: string;
   runRiderAction: (action: RiderAction, args: {title?: string; budgetCents?: number; amountCents?: number; category?: number; description?: string}, onProgress: (value: RiderProgress) => void) => Promise<RiderTransactionResult>;
   runMerchantAction: (expenseId: string, amountCents: number, onProgress: (value: MerchantProgress) => void) => Promise<MerchantTransactionResult>;
+  runFanAction: (amount: bigint, onProgress: (value: FanProgress) => void) => Promise<FanTransactionResult>;
+  tokenBalances: TokenBalances | null;
+  tokenError: string;
 };
 
 const MODE_KEY = 'gridsupport-stage4b-mode';
@@ -54,6 +59,8 @@ export function useConnectedData(role: string): IntegrationView {
   const [selectedExpenseId, selectExpense] = useState('');
   const [snapshot, setSnapshot] = useState<ChainSnapshot | null>(null);
   const [metadata, setMetadata] = useState<VerifiedMetadata>({expenses: {}});
+  const [tokenBalances, setTokenBalances] = useState<TokenBalances | null>(null);
+  const [tokenError, setTokenError] = useState('');
   const [writing, setWriting] = useState(false);
   const writingRef = useRef(false);
   const [status, setStatus] = useState<ReadStatus>('idle');
@@ -156,6 +163,40 @@ export function useConnectedData(role: string): IntegrationView {
       setWriting(false);
     }
   }, [mode, role, publicKey, anchorWallet, status, snapshot, program, connection, sendTransaction, readMetadata, refresh]);
+  const runFanAction = useCallback(async (amount: bigint, onProgress: (value: FanProgress) => void): Promise<FanTransactionResult> => {
+    if (writingRef.current) throw new Error('A transaction is already pending.');
+    if (mode !== 'connected' || role !== 'fan' || !publicKey || !anchorWallet) {
+      throw new Error('Connect a fan wallet before transferring mock-USDC.');
+    }
+    if (status !== 'ready' || !snapshot?.profileExists || snapshot.rider.toBase58() !== currentRider.current) {
+      throw new Error('Load a rider with an on-chain RiderProfile first.');
+    }
+    const fanAddress = publicKey.toBase58();
+    if (currentWallet.current !== fanAddress) throw new Error('Fan wallet changed before signing.');
+    writingRef.current = true;
+    setWriting(true);
+    try {
+      const result = await contributeDirect({program, connection, fan: publicKey,
+        send: transaction => {
+          if (currentWallet.current !== fanAddress) throw new Error('Fan wallet changed before signature. Reconnect it.');
+          return sendTransaction(transaction, connection, {skipPreflight: false, preflightCommitment: 'confirmed'});
+        }, onProgress,
+      }, snapshot.rider, amount);
+      if (currentWallet.current !== fanAddress || currentRider.current !== result.rider.toBase58()) {
+        throw new Error('Contribution confirmed, but the wallet or rider changed before balances could refresh. Reload token accounts.');
+      }
+      setTokenBalances(result.balances);
+      setTokenError('');
+      onProgress({stage: 'confirmed', signature: result.signature});
+      return result;
+    } catch (reason) {
+      refresh();
+      throw reason;
+    } finally {
+      writingRef.current = false;
+      setWriting(false);
+    }
+  }, [mode, role, publicKey, anchorWallet, status, snapshot, program, connection, sendTransaction, refresh]);
   const loadRider = useCallback(() => {
     const value = riderInput.trim();
     if (value) {
@@ -224,6 +265,26 @@ export function useConnectedData(role: string): IntegrationView {
     return () => window.clearInterval(timer);
   }, [mode, requestedRider, refresh]);
 
+  useEffect(() => {
+    if (mode !== 'connected' || !approvedMockMint || !snapshot?.profileExists ||
+      snapshot.rider.toBase58() !== requestedRider || (role !== 'fan' && role !== 'racer')) {
+      setTokenBalances(null);
+      setTokenError('');
+      return;
+    }
+    let current = true;
+    fetchTokenBalances(connection, role === 'fan' ? publicKey : null, snapshot.rider).then(result => {
+      if (!current) return;
+      setTokenBalances(result);
+      setTokenError('');
+    }).catch(reason => {
+      if (!current) return;
+      setTokenBalances(null);
+      setTokenError(reason instanceof Error ? reason.message : 'Unable to read token accounts.');
+    });
+    return () => { current = false; };
+  }, [mode, role, requestedRider, walletAddress, snapshot, connection, publicKey, revision]);
+
   const visibleSnapshot = snapshot?.rider.toBase58() === requestedRider ? snapshot : null;
   const visibleStatus = mode === 'connected' && status === 'ready' && !visibleSnapshot
     ? requestedRider ? 'loading' : role === 'racer' ? 'needs-wallet' : 'needs-rider'
@@ -235,5 +296,6 @@ export function useConnectedData(role: string): IntegrationView {
     mode, setMode, cluster, state, snapshot: visibleSnapshot, status: visibleStatus, error,
     riderInput, setRiderInput, loadRider, selectedExpenseId, selectExpense, refresh,
     walletAddress, writing, seasonTitle: metadata.seasonTitle, runRiderAction, runMerchantAction,
+    runFanAction, tokenBalances, tokenError,
   };
 }
