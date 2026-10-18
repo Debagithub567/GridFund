@@ -16,7 +16,7 @@ await fs.writeFile(path.join(output,'chain/funding.mjs'),"export const fundingTo
 await fs.writeFile(path.join(output,'chain/fanTransactions.mjs'),"export const approvedMockMint={};export const parseMockUsdc=value=>BigInt(value)*1000000n;export const formatMockUsdc=value=>String(value/1000000n)+' gsUSDC';\n");
 const explorerSource=await fs.readFile('src/chain/explorer.ts','utf8');
 await fs.writeFile(path.join(output,'chain/explorer.mjs'),ts.transpileModule(explorerSource,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText);
-for(const name of ['model','DemoState','Dashboard','RiderPage','RoleTabs','RiderDirectory','RacingBudget','ShopBasket','Modal','TransactionResultModal','CommunityImpact']){
+for(const name of ['model','DemoState','Dashboard','RiderPage','RoleTabs','RiderDirectory','RacingBudget','ShopBasket','FanSupport','Modal','TransactionResultModal','CommunityImpact']){
  const source=await fs.readFile(`src/${name}.ts${name==='model'?'':'x'}`,'utf8');
  let code=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext,jsx:ts.JsxEmit.ReactJSX}}).outputText;
  code=code.replace(/import ['"]\.\/[^'"]+\.css['"];?/g,'').replace(/from ['"]\.\/([^'"]+)['"]/g,(_,name)=>`from './${name}.mjs'`);
@@ -80,6 +80,8 @@ test('click Community Impact opens its dialog and progresses without changing sa
  const renderDashboard=async(role,integration)=>act(async()=>root.render(React.createElement(React.StrictMode,null,React.createElement(MotionConfig,{skipAnimations:true},React.createElement(DemoProvider,null,React.createElement(Dashboard,{role,integration}))))));
  await renderDashboard('shop');
  assert.ok(document.querySelector('.support-form'),'Shop demo support form remains available');
+ assert.deepEqual([...document.querySelectorAll('.dash-tabs a')].map(link=>link.getAttribute('href')),['/racer','/shop','/fan']);
+ assert.equal(document.querySelector('.dash-tabs a[aria-current=page]').getAttribute('href'),'/shop');
  assert.match(document.querySelector('.dash-top').textContent,/FRONTEND PREVIEW/);
  assert.equal(document.querySelector('.support-confirm').disabled,false);
  await renderDashboard('fan');
@@ -163,20 +165,28 @@ test('click Community Impact opens its dialog and progresses without changing sa
  assert.deepEqual(partialCalls,[[chainExpense.id,1000],[fuelExpense.id,2000]]);
  assert.match(document.querySelector('.shop-basket-confirmation').textContent,/€10/,'first verified commitment stays visible');
  assert.match(document.querySelector('.shop-basket [role=alert]').textContent,/rejected/i,'later rejection is reported');
- let resolveFan;let fanCalls=0;
- const fanIntegration={...confirmedView,state:{version:1,expenses:[],contributions:[],selectedExpenseId:''},
-  snapshot:{...confirmedView.snapshot,profileExists:true},tokenBalances:{fan:50000000n,rider:0n,riderAta:{toBase58:()=>wallet}},
-  runFanAction:()=>{fanCalls++;return new Promise(resolve=>{resolveFan=resolve})}};
+ let resolveFan;let fanCalls=0;const fanRequests=[];
+ const fanIntegration={...confirmedView,cluster:'devnet',runMerchantAction:(id,cents,onProgress)=>{
+   fanCalls++;fanRequests.push([id,cents]);onProgress({stage:'awaiting-wallet'});
+   return new Promise(resolve=>{resolveFan=resolve})}};
  await renderDashboard('fan',fanIntegration);
- assert.equal(document.querySelector('.support-confirm').disabled,false,'Fan can support the rider without an expense or EUR coverage cap');
- assert.match(document.querySelector('.support-form').textContent,/Recipient rider/);
+ assert.equal(document.querySelector('.dash-tabs a[aria-current=page]').getAttribute('href'),'/fan');
+ assert.ok(document.querySelector('.rider-directory-card'),'Fan discovers registered Riders');
+ assert.equal(document.querySelector('#fan-expense').value,chainExpense.id,'Fan selects a verified expense');
+ assert.equal(document.querySelector('.support-confirm').disabled,false);
+ assert.equal(document.querySelector('.fan-support-success'),null,'Fan success waits for verification');
+ assert.equal(document.querySelector('a[href*="explorer.solana.com/tx"]'),null);
+ assert.equal(document.querySelector('.fan-support').textContent.includes('SET UP FAN TOKEN ACCOUNT'),false);
+ assert.doesNotMatch(document.querySelector('.refined-dashboard').textContent,/gsUSDC|token account|Direct fan tokens/i);
+ await act(async()=>{const input=document.querySelector('#fan-support-amount');const setter=Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set;setter.call(input,'50');input.dispatchEvent(new window.Event('input',{bubbles:true}))});
  await act(async()=>{document.querySelector('.support-confirm').click();document.querySelector('.support-confirm').click()});
- assert.equal(fanCalls,1,'duplicate Fan clicks submit only once');
+ assert.equal(fanCalls,1,'duplicate Fan clicks submit one sponsorship');
+ assert.deepEqual(fanRequests,[[chainExpense.id,5000]],'Fan uses selected expense and exact EUR cents');
  assert.equal(document.querySelector('.support-confirm').disabled,true);
- await act(async()=>resolveFan({signature:'2'.repeat(88),rider:{toBase58:()=>wallet},balances:fanIntegration.tokenBalances}));
- assert.match(document.querySelector('.transaction-modal').textContent,/Thanks for supporting my racing!/);
- assert.match(document.querySelector('.transaction-modal').textContent,/50 gsUSDC/);
- assert.ok(!document.querySelector('#selected-expense'),'Connected Fan cannot select an expense');
+ assert.equal(document.querySelector('.fan-support-success'),null,'wallet approval alone is not success');
+ await act(async()=>resolveFan({signature:'2'.repeat(88),address:{toBase58:()=>wallet}}));
+ assert.match(document.querySelector('.fan-support-success').textContent,/verified/);
+ assert.match(document.querySelector('.fan-support-success a').getAttribute('href'),/explorer\.solana\.com\/tx\/2+\?cluster=devnet/);
  assert.equal(localStorage.getItem(STORAGE_KEY),JSON.stringify(state),'switching dashboards and modes preserves Demo data');
  globalThis.__registrationPhase='unregistered';
  const renderRiderPage=async view=>act(async()=>{root.render(React.createElement(DemoProvider,null,React.createElement(RiderPage,{integration:view})));await Promise.resolve()});
@@ -187,11 +197,22 @@ test('click Community Impact opens its dialog and progresses without changing sa
  assert.equal(document.querySelectorAll('.budget-expense').length,3);
  await act(async()=>document.querySelector('.budget-add').click());
  assert.equal(document.querySelectorAll('.budget-expense').length,4,'registration has one add expense control');
+ await act(async()=>[...document.querySelectorAll('.budget-remove')].at(-1).click());
+ let resolveRegistration;let registrationCalls=0;
+ await renderRiderPage({...integration,runBudgetPlan:()=>{registrationCalls++;return new Promise(resolve=>{resolveRegistration=resolve})}});
+ await act(async()=>document.querySelector('.racing-budget .cta').click());
+ assert.equal(registrationCalls,1,'new Rider invokes the real budget transaction adapter once');
+ assert.equal(document.querySelector('.rider-registered'),null,'submission alone does not claim registration');
+ await act(async()=>resolveRegistration());
+ assert.equal(document.querySelector('.rider-registered'),null,'success waits for verified account state');
  globalThis.__registrationPhase='registered';
  await renderRiderPage(confirmedView);
  assert.ok(document.querySelector('.racing-budget'),'registered rider keeps form first');
  assert.equal(document.querySelector('.dash-layout'),null);
- assert.match(document.querySelector('.saved-feedback').textContent,/Already registered/);
+ assert.equal(document.querySelectorAll('.rider-registered').length,1,'existing Rider has one compact success state');
+ assert.equal(document.querySelector('.rider-registered').textContent,'Rider registered successfully!');
+ assert.equal(document.querySelector('.racing-budget .saved-feedback'),null,'no duplicate success banner');
+ assert.equal(document.querySelector('.racing-budget .cta'),null,'verified Rider submits no duplicate registration');
  await act(async()=>document.querySelector('.rider-registration .text-link').click());
  await act(async()=>{await Promise.resolve()});
  assert.ok(document.querySelector('.dash-layout'),'Expense Dashboard opens on demand');

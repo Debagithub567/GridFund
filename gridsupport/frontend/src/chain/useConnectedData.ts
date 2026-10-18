@@ -10,13 +10,9 @@ import {addExpense, createSeason, initializeRider} from './riderTransactions';
 import type {RiderAction, RiderProgress, RiderTransactionResult} from './riderTransactions';
 import {sponsorExpense} from './merchantTransactions';
 import type {MerchantProgress, MerchantTransactionResult} from './merchantTransactions';
-import {contributeDirect, fetchTokenBalances, prepareFanTokenAccount, approvedMockMint} from './fanTransactions';
-import type {FanProgress, FanTransactionResult, TokenBalances} from './fanTransactions';
 import {directoryEntry, discoverRiderDirectory} from './riderDirectory';
 import {confirmAdditionalExpenses, confirmBudget} from './budget';
 import type {BudgetExpense, BudgetPlan, BudgetStep} from './budget';
-import {saveFanReceipt, verifiedFanReceipts} from './fanReceipts';
-import type {FanReceipt} from './fanReceipts';
 import type {DirectoryRider} from './riderDirectory';
 import {riderName, saveExpenseMetadata, saveSeasonMetadata, verifiedExpenseMetadata, verifiedSeasonTitle} from './metadata';
 import type {VerifiedMetadata} from './metadata';
@@ -44,16 +40,10 @@ export type IntegrationView = {
   writing: boolean;
   seasonTitle?: string;
   riderName?: string;
-  fanReceipts: FanReceipt[];
-  fanReceiptError: string;
   runBudgetPlan: (plan: BudgetPlan, onStep: (step: BudgetStep) => void) => Promise<void>;
   runAdditionalExpenses: (expenses: BudgetExpense[], basePlan: BudgetPlan | null, onStep: (step: BudgetStep) => void) => Promise<void>;
   runRiderAction: (action: RiderAction, args: {title?: string; budgetCents?: number; amountCents?: number; category?: number; description?: string}, onProgress: (value: RiderProgress) => void) => Promise<RiderTransactionResult>;
   runMerchantAction: (expenseId: string, amountCents: number, onProgress: (value: MerchantProgress) => void) => Promise<MerchantTransactionResult>;
-  runFanAction: (amount: bigint, onProgress: (value: FanProgress) => void) => Promise<FanTransactionResult>;
-  runFanSetup: (onProgress: (value: FanProgress) => void) => Promise<{signature: string; address: PublicKey}>;
-  tokenBalances: TokenBalances | null;
-  tokenError: string;
 };
 
 const MODE_KEY = 'gridsupport-stage4b-mode';
@@ -64,7 +54,9 @@ export function useConnectedData(role: string): IntegrationView {
   const {publicKey} = useWallet();
   const {sendTransaction} = useWallet();
   const anchorWallet = useAnchorWallet();
-  const program = useMemo(() => createGridProgram(connection, anchorWallet), [connection, anchorWallet]);
+  // Every write supplies its signer and sends through the wallet adapter. A read-only
+  // Program stays stable when useAnchorWallet returns a fresh object on render.
+  const program = useMemo(() => createGridProgram(connection), [connection]);
   const [mode, setModeState] = useState<DataMode>(() => {
     try { return demoEnabled && localStorage.getItem(MODE_KEY) === 'demo' ? 'demo' : 'connected'; }
     catch { return 'connected'; }
@@ -79,15 +71,14 @@ export function useConnectedData(role: string): IntegrationView {
   const [snapshot, setSnapshot] = useState<ChainSnapshot | null>(null);
   const [snapshotWallet, setSnapshotWallet] = useState('');
   const [metadata, setMetadata] = useState<VerifiedMetadata>({expenses: {}});
-  const [tokenBalances, setTokenBalances] = useState<TokenBalances | null>(null);
-  const [tokenError, setTokenError] = useState('');
-  const [fanReceipts, setFanReceipts] = useState<FanReceipt[]>([]);
-  const [fanReceiptError, setFanReceiptError] = useState('');
   const [writing, setWriting] = useState(false);
   const writingRef = useRef(false);
   const [status, setStatus] = useState<ReadStatus>('idle');
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
+  const readRequest = useRef<{key: string; program: ReturnType<typeof createGridProgram>;
+    promise: Promise<{snapshot: ChainSnapshot; metadata: VerifiedMetadata}>} | null>(null);
+  const readEpoch = useRef(0);
   const walletAddress = publicKey?.toBase58() || '';
   const currentWallet = useRef(walletAddress);
   currentWallet.current = walletAddress;
@@ -108,7 +99,6 @@ export function useConnectedData(role: string): IntegrationView {
     setTargetRider(address);
     setSnapshot(null);
     setMetadata({expenses: {}});
-    setTokenBalances(null);
     setRevision(value => value + 1);
   }, [directoryIdentity, identity, directory]);
   const readMetadata = useCallback(async (data: ChainSnapshot): Promise<VerifiedMetadata> => {
@@ -147,6 +137,8 @@ export function useConnectedData(role: string): IntegrationView {
       if (currentWallet.current !== ownerAddress) {
         throw new Error('Transaction confirmed, but the wallet changed before accounts could refresh. Reconnect the original rider wallet and refresh accounts.');
       }
+      readEpoch.current++;
+      readRequest.current = null;
       setMetadata(nextMetadata);
       setSnapshot(result.snapshot);
       setSnapshotWallet(ownerAddress);
@@ -176,6 +168,7 @@ export function useConnectedData(role: string): IntegrationView {
         }, onProgress: () => {},
       }, plan, onStep);
       if (currentWallet.current !== address) throw new Error('Budget transactions confirmed, but the wallet changed. Reconnect and refresh.');
+      readEpoch.current++; readRequest.current = null;
       setMetadata(await readMetadata(final)); setSnapshot(final); setSnapshotWallet(address); setStatus('ready'); setError('');
     } catch (reason) { refresh(); throw reason; }
     finally { writingRef.current = false; setWriting(false); }
@@ -196,6 +189,7 @@ export function useConnectedData(role: string): IntegrationView {
         }, onProgress: () => {},
       }, expenses, basePlan, onStep);
       if (currentWallet.current !== address) throw new Error('Expense transactions confirmed, but the wallet changed. Reconnect and refresh.');
+      readEpoch.current++; readRequest.current = null;
       setMetadata(await readMetadata(final)); setSnapshot(final); setSnapshotWallet(address); setStatus('ready'); setError('');
     } catch (reason) { refresh(); throw reason; }
     finally { writingRef.current = false; setWriting(false); }
@@ -203,8 +197,9 @@ export function useConnectedData(role: string): IntegrationView {
   const runMerchantAction = useCallback(async (expenseId: string, amountCents: number,
     onProgress: (value: MerchantProgress) => void): Promise<MerchantTransactionResult> => {
     if (writingRef.current) throw new Error('A transaction is already pending.');
-    if (mode !== 'connected' || role !== 'shop' || !publicKey || !anchorWallet) {
-      throw new Error('Connect a merchant wallet before recording an in-kind sponsorship.');
+    if (mode !== 'connected' || (role !== 'shop' && role !== 'fan') || !publicKey || !anchorWallet) {
+      throw new Error(role === 'fan' ? 'Connect a Fan wallet before supporting a Rider.' :
+        'Connect a merchant wallet before recording an in-kind sponsorship.');
     }
     if (status !== 'ready' || directoryStatus !== 'ready' || directoryIdentity !== identity ||
       snapshotWallet !== walletAddress || !snapshot || snapshot.rider.toBase58() !== currentRider.current ||
@@ -213,14 +208,16 @@ export function useConnectedData(role: string): IntegrationView {
       throw new Error('Load a rider and select one of their on-chain expenses.');
     }
     const merchantAddress = publicKey.toBase58();
-    if (currentWallet.current !== merchantAddress) throw new Error('Merchant wallet changed. Reconnect it before signing.');
+    if (currentWallet.current !== merchantAddress) throw new Error(role === 'fan' ?
+      'Fan wallet changed. Reconnect it before signing.' : 'Merchant wallet changed. Reconnect it before signing.');
     writingRef.current = true;
     setWriting(true);
     try {
       const result = await sponsorExpense({
         program, connection, merchant: publicKey,
         send: transaction => {
-          if (currentWallet.current !== merchantAddress) throw new Error('Merchant wallet changed before signature. Reconnect it.');
+          if (currentWallet.current !== merchantAddress) throw new Error(role === 'fan' ?
+            'Fan wallet changed before signature. Reconnect it.' : 'Merchant wallet changed before signature. Reconnect it.');
           return sendTransaction(transaction, connection, {skipPreflight: false, preflightCommitment: 'confirmed'});
         },
         onProgress,
@@ -229,6 +226,8 @@ export function useConnectedData(role: string): IntegrationView {
       if (currentWallet.current !== merchantAddress || currentRider.current !== result.snapshot.rider.toBase58()) {
         throw new Error('Sponsorship confirmed, but the wallet or rider changed before accounts could refresh. Reload the rider accounts.');
       }
+      readEpoch.current++;
+      readRequest.current = null;
       setMetadata(nextMetadata);
       setSnapshot(result.snapshot);
       setSnapshotWallet(merchantAddress);
@@ -248,65 +247,6 @@ export function useConnectedData(role: string): IntegrationView {
     }
   }, [mode, role, publicKey, anchorWallet, status, snapshot, snapshotWallet, walletAddress, directoryStatus,
     directoryIdentity, identity, directory, program, connection, sendTransaction, readMetadata, refresh]);
-  const runFanAction = useCallback(async (amount: bigint, onProgress: (value: FanProgress) => void): Promise<FanTransactionResult> => {
-    if (writingRef.current) throw new Error('A transaction is already pending.');
-    if (mode !== 'connected' || role !== 'fan' || !publicKey || !anchorWallet) {
-      throw new Error('Connect a fan wallet before transferring mock-USDC.');
-    }
-    if (status !== 'ready' || directoryStatus !== 'ready' || directoryIdentity !== identity ||
-      snapshotWallet !== walletAddress || !snapshot?.profileExists || snapshot.rider.toBase58() !== currentRider.current ||
-      !directory.some(entry => entry.rider.equals(snapshot.rider))) {
-      throw new Error('Load a rider with an on-chain RiderProfile first.');
-    }
-    const fanAddress = publicKey.toBase58();
-    if (currentWallet.current !== fanAddress) throw new Error('Fan wallet changed before signing.');
-    writingRef.current = true;
-    setWriting(true);
-    try {
-      const result = await contributeDirect({program, connection, fan: publicKey,
-        send: transaction => {
-          if (currentWallet.current !== fanAddress) throw new Error('Fan wallet changed before signature. Reconnect it.');
-          return sendTransaction(transaction, connection, {skipPreflight: false, preflightCommitment: 'confirmed'});
-        }, onProgress,
-      }, snapshot.rider, amount);
-      if (currentWallet.current !== fanAddress || currentRider.current !== result.rider.toBase58()) {
-        throw new Error('Contribution confirmed, but the wallet or rider changed before balances could refresh. Reload token accounts.');
-      }
-      setTokenBalances(result.balances);
-      setTokenError('');
-      saveFanReceipt({signature: result.signature, rider: result.rider.toBase58(), fan: fanAddress,
-        source: result.source.toBase58(), amount: result.amount.toString()});
-      setFanReceipts(await verifiedFanReceipts(connection, program, result.rider));
-      onProgress({stage: 'confirmed', signature: result.signature});
-      return result;
-    } catch (reason) {
-      refresh();
-      throw reason;
-    } finally {
-      writingRef.current = false;
-      setWriting(false);
-    }
-  }, [mode, role, publicKey, anchorWallet, status, snapshot, snapshotWallet, walletAddress, directoryStatus,
-    directoryIdentity, identity, directory, program, connection, sendTransaction, refresh]);
-  const runFanSetup = useCallback(async (onProgress: (value: FanProgress) => void) => {
-    if (writingRef.current) throw new Error('A transaction is already pending.');
-    if (mode !== 'connected' || role !== 'fan' || !publicKey || !anchorWallet ||
-      currentWallet.current !== publicKey.toBase58()) throw new Error('Connect the Fan wallet before setting up its token account.');
-    writingRef.current = true; setWriting(true);
-    const address = publicKey.toBase58();
-    try {
-      const result = await prepareFanTokenAccount({program, connection, fan: publicKey,
-        send: transaction => {
-          if (currentWallet.current !== address) throw new Error('Fan wallet changed before signature.');
-          return sendTransaction(transaction, connection, {skipPreflight: false, preflightCommitment: 'confirmed'});
-        }, onProgress});
-      if (currentWallet.current !== address) throw new Error('Token account confirmed, but the wallet changed. Reconnect and refresh.');
-      if (snapshot?.profileExists) setTokenBalances(await fetchTokenBalances(connection, publicKey, snapshot.rider));
-      setTokenError('');
-      return result;
-    } catch (reason) { refresh(); throw reason; }
-    finally { writingRef.current = false; setWriting(false); }
-  }, [mode, role, publicKey, anchorWallet, program, connection, sendTransaction, snapshot, refresh]);
   useEffect(() => {
     try { localStorage.setItem(MODE_KEY, mode); } catch { /* Mode still works for this session. */ }
   }, [mode]);
@@ -345,7 +285,6 @@ export function useConnectedData(role: string): IntegrationView {
     setTargetRider('');
     setSnapshot(null);
     setMetadata({expenses: {}});
-    setTokenBalances(null);
   }, [walletAddress]);
 
   useEffect(() => {
@@ -370,69 +309,49 @@ export function useConnectedData(role: string): IntegrationView {
       return;
     }
     let current = true;
-    setSnapshot(null);
-    setStatus('loading');
+    const hasVisibleSnapshot = snapshot?.rider.toBase58() === requestedRider && snapshotWallet === walletAddress;
+    if (!hasVisibleSnapshot) {
+      setSnapshot(null);
+      setStatus('loading');
+    }
     setError('');
-    fetchRiderSnapshot(program, rider).then(async result => {
-      if (!current) return;
-      const nextMetadata = await readMetadata(result);
-      if (!current) return;
+    const requestKey = `${requestedRider}:${walletAddress}`;
+    const epoch = readEpoch.current;
+    if (readRequest.current?.key !== requestKey || readRequest.current.program !== program) {
+      const promise = fetchRiderSnapshot(program, rider).then(async result => ({snapshot: result, metadata: await readMetadata(result)}));
+      readRequest.current = {key: requestKey, program, promise};
+      void promise.finally(() => { if (readRequest.current?.promise === promise) readRequest.current = null; }).catch(() => {});
+    }
+    readRequest.current.promise.then(({snapshot: result, metadata: nextMetadata}) => {
+      if (!current || epoch !== readEpoch.current) return;
       setMetadata(nextMetadata);
       setSnapshot(result);
       setSnapshotWallet(walletAddress);
       setStatus('ready');
     }).catch(reason => {
-      if (!current) return;
-      setSnapshot(null);
-      setStatus('error');
+      if (!current || epoch !== readEpoch.current) return;
+      if (!hasVisibleSnapshot) {
+        setSnapshot(null);
+        setStatus('error');
+      }
       setError(reason instanceof Error ? reason.message : 'Unable to read Solana accounts.');
     });
     return () => { current = false; };
   }, [mode, role, requestedRider, walletAddress, program, revision, readMetadata]);
 
   useEffect(() => {
-    if (mode !== 'connected') return;
+    if (mode !== 'connected' || role === 'racer') return;
     const timer = window.setInterval(() => { if (!writingRef.current) refresh(); }, 20_000);
     return () => window.clearInterval(timer);
   }, [mode, role, requestedRider, refresh]);
 
   useEffect(() => {
-    if (mode !== 'connected' || !requestedRider) return;
+    if (mode !== 'connected' || role === 'racer' || !requestedRider) return;
     const sync = () => { if (document.visibilityState === 'visible' && !writingRef.current) refresh(); };
     window.addEventListener('focus', sync);
     document.addEventListener('visibilitychange', sync);
     return () => { window.removeEventListener('focus', sync); document.removeEventListener('visibilitychange', sync); };
   }, [mode, requestedRider, refresh]);
-
-  useEffect(() => {
-    if (mode !== 'connected' || !approvedMockMint || !snapshot?.profileExists ||
-      snapshot.rider.toBase58() !== requestedRider || (role !== 'fan' && role !== 'racer')) {
-      setTokenBalances(null);
-      setTokenError('');
-      return;
-    }
-    let current = true;
-    fetchTokenBalances(connection, role === 'fan' ? publicKey : null, snapshot.rider).then(result => {
-      if (!current) return;
-      setTokenBalances(result);
-      setTokenError('');
-    }).catch(reason => {
-      if (!current) return;
-      setTokenBalances(null);
-      setTokenError(reason instanceof Error ? reason.message : 'Unable to read token accounts.');
-    });
-    return () => { current = false; };
-  }, [mode, role, requestedRider, walletAddress, snapshot, connection, publicKey, revision]);
-
-  useEffect(() => {
-    if (mode !== 'connected' || role !== 'racer' || !snapshot?.profileExists || snapshot.rider.toBase58() !== walletAddress) {
-      setFanReceipts([]); setFanReceiptError(''); return;
-    }
-    let active = true;
-    verifiedFanReceipts(connection, program, snapshot.rider).then(records => { if (active) { setFanReceipts(records); setFanReceiptError(''); } })
-      .catch(reason => { if (active) { setFanReceipts([]); setFanReceiptError(reason instanceof Error ? reason.message : 'RPC unavailable'); } });
-    return () => { active = false; };
-  }, [mode, role, walletAddress, snapshot, connection, program, revision]);
 
   const visibleSnapshot = snapshot?.rider.toBase58() === requestedRider && snapshotWallet === walletAddress &&
     (role === 'racer' || (directoryIdentity === identity && visibleDirectory.some(entry => entry.rider.equals(snapshot.rider))))
@@ -451,6 +370,5 @@ export function useConnectedData(role: string): IntegrationView {
     selectedExpenseId, selectExpense, refresh,
     walletAddress, writing, seasonTitle: metadata.seasonTitle, riderName: visibleSnapshot ? riderName(visibleSnapshot.rider.toBase58()) : undefined,
     runRiderAction, runBudgetPlan, runAdditionalExpenses, runMerchantAction,
-    runFanAction, runFanSetup, tokenBalances, tokenError, fanReceipts, fanReceiptError,
   };
 }

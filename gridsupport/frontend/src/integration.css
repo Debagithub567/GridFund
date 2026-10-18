@@ -71,6 +71,11 @@
 @media(max-width:700px){.racing-budget,.shop-basket{padding:20px}.budget-fields,.budget-expense{grid-template-columns:1fr}.shop-basket-line{grid-template-columns:22px minmax(0,1fr)}.shop-basket-line .gs-money-input{grid-column:2}}
 .rider-registration>.text-link,.refined-dashboard>.text-link{background:transparent;border:0;color:var(--lime);padding:0;margin:0 0 24px;text-transform:uppercase}
 .rider-registration>.saved-feedback{max-width:1100px;margin:0 auto 18px}
+.rider-registration>.rider-registered{width:max-content;max-width:100%;padding:9px 13px;margin:0 auto 12px;font-size:11px}
+.rider-account-details{max-width:1100px;margin:0 auto 14px;color:var(--muted);font-size:10px}
+.rider-account-details summary{cursor:pointer;color:var(--lime)}
+.rider-account-details a,.fan-support-success a{color:var(--lime);text-decoration:underline;text-underline-offset:3px}
+.fan-support-success{flex-wrap:wrap}
 .rider-registration>.text-link{display:flex;margin:0 auto 22px;max-width:1100px}
 .rider-funding-summary{max-width:1100px;margin:20px 0 30px;padding:25px 28px;background:#171b17;border:1px solid #d5fa5240}
 .rider-funding-summary .eyebrow{color:var(--lime);margin:0 0 12px}

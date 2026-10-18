@@ -12,7 +12,7 @@ Routes: `/`, `/racer`, `/shop`, `/fan`. Static hosting needs an `index.html` SPA
 
 The app starts in Connected mode. On `/racer`, connect a compatible wallet and review the editable Pol Espargaró / 2026 draft: Racing tyres €500, Fuel & travel €300, Accommodation & food €200. Additional expenses can be added in the same form. **Confirm Racing Budget** signs only missing profile, season and expense transactions. Each step confirms and verifies its account before the next. A stored draft helps resume an interrupted attempt, but registration and the dashboard require verified accounts. Existing unrelated expenses stay separate from the submitted budget. Names and readable labels are browser-local metadata, not public program fields.
 
-A verified Rider sees the existing expense cards with required, covered and remaining amounts. Expense coverage comes from verified in-kind sponsorship records. Direct Fan tokens remain separate and do not cover an expense.
+A verified Rider keeps the registration form visible with one compact success message and a small Expense Dashboard button. The dashboard shows required, covered and remaining amounts from verified sponsorship records. Returning to Rider or opening the dashboard triggers a fresh account read without clearing the current view.
 
 ## Discover Riders
 
@@ -24,13 +24,13 @@ Select a rider, check one or more expenses, and enter a separate EUR amount for 
 
 ## Fan support
 
-Select a rider and enter a direct gsUSDC amount; there is no expense choice. The adapter checks the active network's approved six-decimal standard SPL mint, source account ownership and balance, and canonical rider ATA. It creates a missing rider ATA in the signed transaction, confirms the transfer, verifies its exact signature-bound debit and credit, and refreshes balances before success. The local mint is `6Ckm2BrnXxsSjyG5b17kQQRjoECVrts92RKXVGT8XeqS`; the default build pins the separately verified Devnet mint `Eu5ZdwKKpSNej1koShWYBm7SKoPE2utvtb3yLWSjRxf1`. Nothing in this work deploys the program or mints Devnet tokens.
+Select a registered rider, choose one verified expense and enter an amount in EUR. Fan uses the same `sponsor_expense` adapter as Shopkeeper, with the connected Fan wallet as signer. Success appears only after transaction confirmation and verification of the sponsorship account and updated coverage. The contract records a sponsorship and does not distinguish Fan from Shopkeeper signers; no token transfer occurs in this dashboard flow. Devnet signatures link to Solana Explorer.
 
 ## Readable metadata and presentation
 
-Season and expense descriptions are SHA-256 hashes on-chain. This browser stores readable season and expense labels under cluster, program and PDA keys, and checks stored season/description hashes against chain data. Rider names are browser-local and cannot be verified from this account schema; unknown riders retain numbered fallbacks. Verified Fan contribution receipts are scoped to cluster, program, mint, rider and signature, deduplicated, and rechecked against the `contribute_direct` instruction and transaction token metadata. They are not a global contribution index. Demo fixtures remain available with `VITE_ENABLE_DEMO=true`; that flag exposes the old Demo controls for offline rehearsal. Community Help is illustrative and does not write to Solana. The victory MP4 is absent, so the existing fallback plays.
+Season and expense descriptions are SHA-256 hashes on-chain. This browser stores readable season and expense labels under cluster, program and PDA keys, and checks stored season/description hashes against chain data. Rider names are browser-local and cannot be verified from this account schema; unknown riders retain numbered fallbacks. Both Shopkeeper and Fan expense support is counted once from verified sponsorship accounts. Demo fixtures remain available with `VITE_ENABLE_DEMO=true`; that flag exposes the old Demo controls for offline rehearsal. Community Effect is illustrative and does not write to Solana. The victory MP4 is absent, so the existing fallback plays.
 
-The [judge demo runbook](../docs/architecture/JUDGE_DEMO_RUNBOOK.md) gives exact local commands, the €1,000 / €50 / 50 gsUSDC walkthrough, recovery, browser wallet limitations and later Devnet checklist.
+The [judge demo runbook](../docs/architecture/JUDGE_DEMO_RUNBOOK.md) gives local commands, the expense-sponsorship walkthrough, recovery and browser wallet limitations.
 
 ## Verify
 
@@ -79,4 +79,4 @@ Only temporary local validator wallets were used. Phantom has no custom local va
 - Isolated local validator: 4 passed, 0 failed, 0 skipped. The new case discovered two real RiderProfiles, selected one for a confirmed Shop sponsorship and Fan transfer, and verified that merchant coverage remained unchanged by the Fan transfer.
 - Frontend TypeScript and production build passed. Root typecheck passed; LiteSVM integration: 24 passed, default-mint: 1 passed, IDL: 3 passed, Rust structural: 5 passed. The default SBF build was restored after local testing.
 
-No browser wallet signing pass or Chainstack/Devnet query was performed. The configured Devnet program must exist at the bundled program ID, and the selected RPC must support filtered `getProgramAccounts`; Fan writes additionally require a separately approved Devnet mock-USDC mint and program build.
+No browser wallet signing pass or Chainstack/Devnet query was performed. The configured Devnet program must exist at the bundled program ID, and the selected RPC must support filtered `getProgramAccounts`.

@@ -275,6 +275,37 @@ test('signed Shop sponsorship workflow on an isolated local validator', {skip: !
   console.log('Local validator confirmed Shop signatures:', [first.signature, second.signature, full.signature].join(' '));
 });
 
+test('Shopkeeper and Fan sign the same expense sponsorship path without double counting', {skip: !rpc}, async () => {
+  const connection = new Connection(rpc, 'confirmed');
+  const rider = Keypair.generate(), shop = Keypair.generate(), fan = Keypair.generate();
+  for (const signer of [rider, shop, fan]) {
+    const signature = await connection.requestAirdrop(signer.publicKey, 2_000_000_000);
+    assert.equal((await connection.confirmTransaction({signature, ...await connection.getLatestBlockhash('confirmed')}, 'confirmed')).value.err, null);
+  }
+  const program = createGridProgram(connection);
+  const sendBy = signer => async transaction => {
+    assert.ok(transaction.feePayer.equals(signer.publicKey));
+    transaction.sign(signer);
+    return connection.sendRawTransaction(transaction.serialize(), {skipPreflight: false, preflightCommitment: 'confirmed'});
+  };
+  const riderCtx = {program, connection, rider: rider.publicKey, send: sendBy(rider), onProgress: () => {}};
+  await initializeRider(riderCtx);
+  await createSeason(riderCtx, 50000, 'Shared support season');
+  const expense = await addExpense(riderCtx, 50000, 1, 'Racing tyres');
+  const shopResult = await sponsorExpense({program, connection, merchant: shop.publicKey, send: sendBy(shop), onProgress: () => {}},
+    rider.publicKey, expense.address, 6000);
+  const fanResult = await sponsorExpense({program, connection, merchant: fan.publicKey, send: sendBy(fan), onProgress: () => {}},
+    rider.publicKey, expense.address, 5000);
+  assert.notEqual(shopResult.signature, fanResult.signature);
+  const verified = await fetchRiderSnapshot(program, rider.publicKey);
+  assert.equal(verified.expenses[0].estimatedCostCents, 50000n);
+  assert.equal(verified.expenses[0].committedCoverageCents, 11000n);
+  assert.equal(verified.expenses[0].estimatedCostCents - verified.expenses[0].committedCoverageCents, 39000n);
+  assert.deepEqual(verified.expenses[0].sponsorships.map(item => item.merchant.toBase58()),
+    [shop.publicKey.toBase58(), fan.publicKey.toBase58()]);
+  assert.equal(new Set(verified.expenses[0].sponsorships.map(item => item.address.toBase58())).size, 2);
+});
+
 test('shared directory selects actual Rider accounts for Shop then Fan on an isolated validator',
   {skip: !rpc || !mintAuthorityPath}, async () => {
     const connection = new Connection(rpc, 'confirmed');

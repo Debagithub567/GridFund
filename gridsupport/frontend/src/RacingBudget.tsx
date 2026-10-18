@@ -7,7 +7,7 @@ import type {BudgetPlan, BudgetStep} from './chain/budget';
 import {riderError} from './chain/riderTransactions';
 import {expenseCategories} from './chain/categories';
 import {defaultBudgetPlan} from './chain/registration';
-import {explorerAccountUrl, explorerTransactionUrl} from './chain/explorer';
+import {explorerTransactionUrl} from './chain/explorer';
 
 type Draft = {title: string; amount: string; category: number; description: string};
 const fromPlan = (plan: BudgetPlan): Draft[] => plan.expenses.map(item => ({title: item.title,
@@ -42,7 +42,6 @@ export default function RacingBudget({integration, initialPlan, basePlan, regist
   const [additional, setAdditional] = useState<Draft[]>(restored.current?.additional || []);
   const [steps, setSteps] = useState<BudgetStep[]>([]);
   const [busy, setBusy] = useState(false);
-  const [success, setSuccess] = useState('');
   const lock = useRef(false);
   useEffect(() => { try { localStorage.setItem(draftKey(integration.walletAddress), JSON.stringify({name, season, expenses, additional})); } catch { /* Draft remains in memory. */ } }, [integration.walletAddress, name, season, expenses, additional]);
   const update = (index: number, change: Partial<Draft>, extra = false) => {
@@ -58,22 +57,20 @@ export default function RacingBudget({integration, initialPlan, basePlan, regist
     lock.current = true;
     try {
       if (!integration.walletAddress || integration.status !== 'ready') throw new Error('Connect your wallet and wait for your accounts to load.');
-      setSteps([]); setSuccess(''); onFailure('');
+      setSteps([]); onFailure('');
       if (registered) {
-        if (!additional.length) { setSuccess(`Already registered · Verified on ${integration.cluster === 'devnet' ? 'Devnet' : 'localnet'}. No transaction was submitted.`); return; }
+        if (!additional.length) return;
         const rows = parseRows(additional);
         if (rows.some(item => !item.title || !item.description)) throw new Error('Complete each new expense before signing.');
         setBusy(true); onRegistering();
         await integration.runAdditionalExpenses(rows, basePlan, onStep);
         setAdditional([]);
-        setSuccess(`Additional expenses verified on ${integration.cluster === 'devnet' ? 'Devnet' : 'localnet'}. The original season budget is unchanged.`);
       } else {
         const plan: BudgetPlan = {name: name.trim(), season: season.trim(), expenses: parseRows(expenses)};
         if (!plan.name || !plan.season || !plan.expenses.length || plan.expenses.some(item => !item.title || !item.description))
           throw new Error('Enter a rider name, season, and complete expense details.');
         setBusy(true); onRegistering(); onIntent(plan);
         await integration.runBudgetPlan(plan, onStep);
-        setSuccess(`Racing Budget Registered Successfully · Verified on ${integration.cluster === 'devnet' ? 'Devnet' : 'localnet'}.`);
       }
       onComplete();
     } catch (reason) { onFailure(riderError(reason)); }
@@ -82,10 +79,8 @@ export default function RacingBudget({integration, initialPlan, basePlan, regist
   const rows = registered ? basePlan ? fromPlan(basePlan) : integration.state?.expenses.map(item => ({title: item.title,
     amount: String(item.requiredCents / 100), category: 0, description: item.description || 'Verified on-chain expense'})) || [] : expenses;
   const total = rows.reduce((sum, item) => { try { return sum + parseAmount(item.amount); } catch { return sum; } }, 0);
-  const accountUrl = integration.snapshot ? explorerAccountUrl(integration.snapshot.seasonAddress.toBase58(), integration.cluster) : null;
   return <section className="racing-budget" aria-labelledby="racing-budget-title">
     <div className="eyebrow">RIDER / RACING BUDGET</div><h2 id="racing-budget-title">YOUR ROAD TO THE GRID.</h2>
-    {registered && <p className="input-help">Confirmed account values are read only. The season planning budget is fixed on-chain; new expenses are added separately.</p>}
     <form onSubmit={submit}><div className="budget-fields"><label>Rider name <input className="gs-input" value={registered ? basePlan?.name || integration.riderName || 'Verified rider' : name} maxLength={80} onChange={event => setName(event.target.value)} readOnly={registered} required /></label>
       <label>Racing season <input className="gs-input" value={registered ? basePlan?.season || integration.seasonTitle || 'Verified season' : season} maxLength={80} onChange={event => setSeason(event.target.value)} readOnly={registered} required /></label></div>
       <div className="budget-lines">{rows.map((item, index) => <div className="budget-expense" key={index}>
@@ -104,9 +99,8 @@ export default function RacingBudget({integration, initialPlan, basePlan, regist
           <button className="budget-remove" type="button" aria-label={`Remove new expense ${index + 1}`} onClick={() => setAdditional(current => current.filter((_, position) => position !== index))} disabled={busy}><X size={15}/></button>
         </div>)}</div><button className="budget-add" type="button" onClick={() => setAdditional(current => [...current, empty()])} disabled={busy}><Plus size={15}/> Add expense</button></> : <><button className="budget-add" type="button" onClick={() => setExpenses(current => [...current, empty()])} disabled={busy}><Plus size={15}/> Add expense</button>
         <div className="budget-total-line"><span>Total racing budget</span><strong>{money(total)}</strong></div></>}
-      {steps.length > 0 && <ol className="budget-progress" aria-live="polite">{steps.map(step => <li key={step.index}><span>{step.label}: {labels[step.stage]}</span>{step.signature && (explorerTransactionUrl(step.signature, integration.cluster) ? <a href={explorerTransactionUrl(step.signature, integration.cluster)!} target="_blank" rel="noopener noreferrer">View transaction ↗</a> : <code>{step.signature.slice(0, 10)}…</code>)}</li>)}</ol>}
-      {success && <p className="saved-feedback" role="status">{success} {accountUrl && <a href={accountUrl} target="_blank" rel="noopener noreferrer">View verified season account ↗</a>}</p>}
-      <button className="cta" type="submit" disabled={busy || integration.writing || integration.status !== 'ready' || !integration.walletAddress}>{busy ? <><LoaderCircle className="spinning" size={17}/> CONFIRMING…</> : registered ? additional.length ? <>ADD EXPENSES <ArrowUpRight size={17}/></> : <>VERIFY REGISTRATION <ArrowUpRight size={17}/></> : <>CONFIRM RACING BUDGET <ArrowUpRight size={17}/></>}</button>
+      {steps.length > 0 && <details className="rider-account-details" open={busy}><summary>{busy ? `${steps.at(-1)?.label}: ${labels[steps.at(-1)!.stage]}` : 'Transaction details'}</summary><ol className="budget-progress">{steps.map(step => <li key={step.index}><span>{step.label}: {labels[step.stage]}</span>{step.signature && (explorerTransactionUrl(step.signature, integration.cluster) ? <a href={explorerTransactionUrl(step.signature, integration.cluster)!} target="_blank" rel="noopener noreferrer">View transaction ↗</a> : <code>{step.signature.slice(0, 10)}…</code>)}</li>)}</ol></details>}
+      {(!registered || additional.length > 0) && <button className="cta" type="submit" disabled={busy || integration.writing || integration.status !== 'ready' || !integration.walletAddress}>{busy ? <><LoaderCircle className="spinning" size={17}/> CONFIRMING…</> : registered ? <>ADD EXPENSES <ArrowUpRight size={17}/></> : <>CONFIRM RACING BUDGET <ArrowUpRight size={17}/></>}</button>}
     </form>
   </section>;
 }

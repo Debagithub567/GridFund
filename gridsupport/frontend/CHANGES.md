@@ -48,3 +48,10 @@ Initialized animation timing from the first animation-frame callback and clamped
 - Added multi-expense Shop in-kind commitments, direct Fan support without expense selection, personalized verified confirmations, local signature copying and a presentation-only combined support display from verified Rider ATA transaction history. Rider accounts refresh every 20 seconds while connected.
 - Made Rider discovery the primary Shop/Fan view, hid the large technical account panel and default Demo switch, and kept Demo fixtures behind `VITE_ENABLE_DEMO=true`.
 - Added Community Help storyline and final messages while preserving the existing animation and missing-video fallback. Added the judge runbook and an isolated local-validator exact-amount workflow. The default Rust and frontend mint configurations now pin the separately verified Devnet mint; no Devnet deployment or token minting occurred.
+
+## Final demo flow update
+
+- Rider registration keeps the form visible and shows one compact success message after existing or new accounts are verified. Existing accounts trigger no duplicate signing; transaction details remain available in a small disclosure.
+- Stabilized the Solana connection and read program, removed Rider polling and focus refreshes, deduplicated concurrent reads, and retained verified Rider data during explicit background refreshes.
+- Connected Fan now selects an expense and uses the same verified `sponsor_expense` adapter as Shopkeeper with its own wallet signer. The Fan screen no longer offers token account setup or direct token transfer. The contract itself remains unchanged.
+- Rider expense coverage counts verified sponsorship accounts from either signer once. The original budget and additional expenses remain separate. Shopkeeper and Community Effect flows are preserved.

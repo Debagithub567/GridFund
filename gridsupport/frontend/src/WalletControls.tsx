@@ -11,8 +11,9 @@ const WalletErrors = createContext<{error: string; setError: (value: string) => 
 
 export function WalletProviders({children}: {children: ReactNode}) {
   const wallets = useMemo(() => [new PhantomWalletAdapter()], []);
+  const connectionConfig = useMemo(() => ({commitment: 'confirmed' as const}), []);
   const [error, setError] = useState('');
-  return <ConnectionProvider endpoint={endpoint} config={{commitment: 'confirmed'}}>
+  return <ConnectionProvider endpoint={endpoint} config={connectionConfig}>
     <WalletProvider wallets={wallets} autoConnect={false} onError={failure => setError(failure.message)}>
       <WalletErrors.Provider value={{error, setError}}>{children}</WalletErrors.Provider>
     </WalletProvider>
