@@ -1,52 +1,36 @@
 # GridSupport frontend — shared Rider Directory
 
-React 19, TypeScript, Vite, Framer Motion, and Solana wallet adapter. The approved Stage 4A presentation remains available in Demo mode.
+React 19, TypeScript, Vite, Framer Motion, and Solana wallet adapter. The previous Stage 4A presentation remains available through the optional Demo flag.
 
 ## Run
 
-Use Node 22.18+ or 24. From `frontend/`, run `npm ci`, copy `.env.example` to `.env.local`, and run `npm run dev`. Set `VITE_SOLANA_CLUSTER=localnet` or `devnet`; localnet is the default. An optional `VITE_SOLANA_RPC_URL` overrides the RPC and can point to a privately configured Chainstack Devnet endpoint. A signing wallet must support the selected network; Phantom does not offer a custom local validator network. Never put a private key or RPC credential in a committed frontend environment file.
+Use Node 22.18+ or 24. From `frontend/`, run `npm ci`, copy `.env.example` to `.env.local`, and run `npm run dev`. Set `VITE_SOLANA_CLUSTER=localnet` or `devnet`; localnet is the default. Connected mode is the presentation default; `VITE_ENABLE_DEMO=true` exposes the offline Demo switch. An optional `VITE_SOLANA_RPC_URL` overrides the RPC and can point to a privately configured Chainstack Devnet endpoint. A signing wallet must support the selected network; Phantom does not offer a custom local validator network. Never put a private key or RPC credential in a committed frontend environment file.
 
 Routes: `/`, `/racer`, `/shop`, `/fan`. Static hosting needs an `index.html` SPA fallback. Photos and the optional victory MP4 are under `public/`.
 
 ## Connected Rider workflow
 
-The top-right button connects Phantom or another supported detected wallet. On `/racer`, choose **Connected**. The dashboard reads the connected wallet's canonical RiderProfile, Season, Expense and Sponsorship accounts. If no profile exists, click **Create Rider Profile**. Then enter a season title and budget and click **Create Season**. V1 allows one season per rider. The season budget is a planning target; the program does not cap expenses with it. Add an expense with a title, category, description and custom EUR amount. Confirmed expenses cannot be edited.
+The app starts in Connected mode. On `/racer`, connect a compatible wallet and review the editable Pol Espargaró / 2026 draft: Racing tyres €500, Fuel & travel €300, Accommodation & food €200. Additional expenses can be added in the same form. **Confirm Racing Budget** signs only missing profile, season and expense transactions. Each step confirms and verifies its account before the next. A stored draft helps resume an interrupted attempt, but registration and the dashboard require verified accounts. Existing unrelated expenses stay separate from the submitted budget. Names and readable labels are browser-local metadata, not public program fields.
 
-Every Rider action requests a wallet signature. The modal shows approval, submission, confirmation, and account verification progress. Success appears only after the transaction confirms and the new account is fetched. The signature links to the configured network in Solana Explorer. Localnet uses a custom Explorer URL; a locally running RPC is required to inspect it. The rider wallet needs enough SOL for account rent and fees. Devnet writes require the existing program ID to be deployed on Devnet; this step does not deploy it.
+A verified Rider sees the existing expense cards with required, covered and remaining amounts. Expense coverage comes from verified in-kind sponsorship records. Direct Fan tokens remain separate and do not cover an expense.
 
-After verification, Connected mode replaces its account snapshot automatically, including the new profile, season or expense. The new expense becomes selected. A rejected wallet request or failed confirmation does not show success. If a wallet changes while a transaction is in flight, reconnect the original rider wallet and refresh its accounts before continuing.
+## Discover Riders
 
-Shop and Fan Connected views discover public RiderProfiles automatically from the configured program and RPC. Merchant in-kind coverage is taken from on-chain Expense accounts. Direct fan mock-USDC transfers remain separate from expense coverage.
+`/shop` and `/fan` automatically query real RiderProfile accounts from the selected RPC using filtered `getProgramAccounts`. The directory validates canonical PDAs and joins Season, Expense and Sponsorship accounts. It shows only riders with a verified profile, season and at least one expense. **Discover Riders** cards show a locally known name when available, or `Rider #N`, season, sponsorship needs and verified amounts. Loading, empty, error, selection and a small refresh action are present. The RPC must support the filtered query. No manual address entry is needed.
 
-## Shared Rider Directory
+## Shopkeeper support
 
-Both Connected Shop and Connected Fan use the same Rider Directory. It queries the configured program with `getProgramAccounts`, filtering by the IDL RiderProfile discriminator and account size. Each result is decoded with the existing Anchor coder and checked against its canonical PDA. The existing account reader then loads the rider's Season, Expenses and Sponsorships. Cards are sorted by public key and show the verified season budget, expense count, merchant coverage and remaining coverage. A card selects the rider for the existing Shop or Fan transaction adapter. The directory refreshes when entering either dashboard, changing wallets, using **Refresh Riders**, and during the 20-second poll. Selection refreshes that rider's accounts.
+Select a rider, check one or more expenses, and enter a separate EUR amount for each. The `sponsor_expense` adapter rereads remaining coverage, signs and confirms each transaction, then verifies the sponsorship and updated expense. Several selected expenses are processed sequentially; a later rejection leaves earlier verified commitments visible. Sponsorship is an in-kind promise, not a payment or proof of fulfillment. Local signatures can be copied; Devnet signatures link to Solana Explorer.
 
-The program has no readable rider name or image field. Cards use `Rider #1`, `Rider #2`, and so on in deterministic order, plus the public wallet address and an explicitly illustrative existing photograph. Season titles appear only when this browser holds matching hash-verified metadata; otherwise the card says `Season #1` or `Season not created`. A rider created in another browser still appears. Zero profiles produce an empty state; an RPC or deployment failure produces a visible error and retry action. No demo riders or localStorage records are used as directory membership.
+## Fan support
 
-The selected RPC must support filtered `getProgramAccounts`; a provider that disables it cannot serve the directory. A Chainstack URL belongs in a local, uncommitted `.env.local`. Vite embeds that URL in browser code, so it must be suitable for browser exposure. This repository has no Chainstack credential or verified Devnet deployment.
+Select a rider and enter a direct gsUSDC amount; there is no expense choice. The adapter checks the active network's approved six-decimal standard SPL mint, source account ownership and balance, and canonical rider ATA. It creates a missing rider ATA in the signed transaction, confirms the transfer, verifies its exact signature-bound debit and credit, and refreshes balances before success. The local mint is `6Ckm2BrnXxsSjyG5b17kQQRjoECVrts92RKXVGT8XeqS`; the default build pins the separately verified Devnet mint `Eu5ZdwKKpSNej1koShWYBm7SKoPE2utvtb3yLWSjRxf1`. Nothing in this work deploys the program or mints Devnet tokens.
 
-## Connected Shop sponsorship workflow
+## Readable metadata and presentation
 
-On `/shop`, choose **Connected**, connect a merchant wallet, select a rider card, and browse that rider's on-chain expenses. Select an expense and enter any positive EUR amount with up to two decimal places, no greater than the displayed remaining merchant coverage. **Record Sponsorship** asks the merchant wallet to sign and pay the Solana transaction fee. It records an in-kind commitment; the instruction transfers no SOL or tokens and does not verify delivery of goods or services. The rider does not sign. A rider with no season or expenses has an explicit empty state.
+Season and expense descriptions are SHA-256 hashes on-chain. This browser stores readable season and expense labels under cluster, program and PDA keys, and checks stored season/description hashes against chain data. Rider names are browser-local and cannot be verified from this account schema; unknown riders retain numbered fallbacks. Verified Fan contribution receipts are scoped to cluster, program, mint, rider and signature, deduplicated, and rechecked against the `contribute_direct` instruction and transaction token metadata. They are not a global contribution index. Demo fixtures remain available with `VITE_ENABLE_DEMO=true`; that flag exposes the old Demo controls for offline rehearsal. Community Help is illustrative and does not write to Solana. The victory MP4 is absent, so the existing fallback plays.
 
-The app re-reads the expense immediately before building the instruction, derives the next canonical sponsorship PDA from its current sponsorship count, confirms the signature, and re-reads both the sponsorship and expense before showing **Sponsorship Recorded!**. The modal shows the actual signature, network and Explorer link. A rejected signature, failed transaction, changed wallet, or unverified account cannot show success. Failed submissions trigger an account refresh, including when another merchant has filled the expense first. A fully covered expense cannot be sponsored again. Repeated valid commitments by the same merchant create separate sponsorship accounts.
-
-Shop and Rider views use the same program accounts for merchant coverage; Demo support and fan token transfers are excluded. Successful Shop submissions refresh the current dashboard immediately. Other sessions and wallets can use **Refresh Accounts** or wait for the 20-second account poll. This is polling, not real-time synchronization.
-
-## Connected Fan contribution workflow
-
-On `/fan`, choose **Connected**, connect a fan wallet, and select the recipient's Rider Directory card. The recipient address and current fan/rider token account balances appear above the amount field. Enter a positive mock-USDC amount with at most six decimal places and click **Support Rider**. The fan needs local SOL for fees and, if missing, creation of the rider's canonical associated token account (ATA). The app never mints tokens to a connected wallet.
-
-The local build approves only the dedicated six-decimal standard SPL Token mint `6Ckm2BrnXxsSjyG5b17kQQRjoECVrts92RKXVGT8XeqS`. The default program build has no approved mint; Fan writes are unavailable on Devnet until a reviewed mint and program deployment are separately approved. The app checks the mint, fan source account and rider ATA, then requests one wallet signature for ATA creation if needed and `contribute_direct`. It waits for confirmation, verifies the exact source debit and destination credit in that transaction's token balance metadata, and refreshes both displayed balances before showing **Contribution Transferred!** with the real signature and Explorer link. A rejected or unverifiable transaction cannot show success.
-
-Expense selection in Connected Fan mode is optional presentation context. The transfer goes directly to the rider wallet and creates no expense attribution, merchant sponsorship, EUR valuation or merchant coverage. The rider ATA balance is a current balance, not a lifetime contribution total. Other sessions can use **Refresh Accounts** or wait for the 20-second poll.
-
-## Readable metadata
-
-The program stores SHA-256 hashes, not readable text. This MVP keeps season titles and expense titles/descriptions in a browser `localStorage` registry keyed by cluster, program ID, account type, and the canonical account PDA. The bytes hashed are the UTF-8 encoding of the trimmed input text, with no prefix, Unicode normalization, or trailing newline. The season title is checked against its on-chain `title_hash`; the expense description is checked against `description_hash`, and its category must match. The expense title itself cannot be verified because the current account has no title hash. If a record is absent, corrupt, or fails hash verification, the UI displays the on-chain expense number and category/hash fallback. Metadata does not sync across devices, browsers, or cleared storage. A durable public metadata service belongs in a later step.
-
-Demo mode uses its existing, separate `gridsupport-stage4a-v1` browser state. Switching modes never promotes demo support into confirmed account totals. Reset Demo only resets the preview. Community Impact remains an illustrative animation; it does not submit transactions or alter chain state.
+The [judge demo runbook](../docs/architecture/JUDGE_DEMO_RUNBOOK.md) gives exact local commands, the €1,000 / €50 / 50 gsUSDC walkthrough, recovery, browser wallet limitations and later Devnet checklist.
 
 ## Verify
 
@@ -61,6 +45,8 @@ bash scripts/start-local-fan-validator.sh /tmp/gridsupport-fan-step5
 In another terminal, from `frontend/`, run `GRIDSUPPORT_LOCAL_RPC=http://127.0.0.1:8899 GRIDSUPPORT_LOCAL_MINT_AUTHORITY=/tmp/gridsupport-fan-step5/mint-authority.json npm run test:local-validator`. The test generates and funds temporary test keypairs only on that local validator. It does not use the configured CLI wallet. Stop the validator with Ctrl-C; the launcher restores the default SBF build. The [Step 5 local guide](../docs/architecture/STAGE4B_STEP5_LOCAL_GUIDE.md) covers funding, balances, and the Phantom browser limitation.
 
 The frontend bundles the generated IDL and type in `src/chain/`. Sync both after any future Anchor interface change; frontend tests compare the bundled IDL to `target/idl/gridsupport.json`.
+
+The dated checkpoints below describe earlier stages. The final local judge flow and current mint setup are documented above and in the runbook.
 
 ## Step 3 verification (17 October 2026)
 

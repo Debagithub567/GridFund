@@ -33,7 +33,7 @@ test('Rider adapter sends a wallet transaction, confirms it, then refreshes and 
   const result = await initializeRider(ctx);
   assert.equal(result.signature, signature);
   assert.equal(result.snapshot.profileExists, true);
-  assert.deepEqual(stages, ['awaiting-wallet','submitted','confirming']);
+  assert.deepEqual(stages, ['awaiting-wallet','submitted','confirming','verifying']);
   await assert.rejects(initializeRider(ctx), /already exists/);
   assert.equal(sends, 1);
 });
@@ -59,7 +59,7 @@ test('Rider success waits for account visibility and never reports a failed conf
   const result = await initializeRider(context);
   assert.equal(result.snapshot.profileExists, true);
   assert.equal(readsAfterConfirmation, 2);
-  assert.deepEqual(stages, ['awaiting-wallet', 'submitted', 'confirming']);
+  assert.deepEqual(stages, ['awaiting-wallet', 'submitted', 'confirming', 'verifying']);
 
   confirmed = false;
   readsAfterConfirmation = 0;
@@ -93,7 +93,7 @@ test('wallet rejection and transaction errors are displayed; Explorer links resp
   assert.match(riderError(new Error('account already in use')), /already exists/);
   const signature='2'.repeat(88);
   assert.equal(explorerTransactionUrl(signature,'devnet'),`https://explorer.solana.com/tx/${signature}?cluster=devnet`);
-  assert.equal(explorerTransactionUrl(signature,'localnet','http://127.0.0.1:8899'),`https://explorer.solana.com/tx/${signature}?cluster=custom&customUrl=http%3A%2F%2F127.0.0.1%3A8899`);
+  assert.equal(explorerTransactionUrl(signature,'localnet','http://127.0.0.1:8899'),null);
   assert.equal(explorerTransactionUrl('bad','devnet'),null);
   const html=renderToStaticMarkup(React.createElement(TransactionResultModal,{result:{
     type:'profile',expenseId:'',expenseTitle:'RiderProfile',amountCents:0,status:'error',cluster:'localnet',endpoint:'http://127.0.0.1:8899',errorMessage:'Wallet approval was rejected. No account was created.',

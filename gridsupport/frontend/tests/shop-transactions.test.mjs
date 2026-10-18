@@ -98,5 +98,6 @@ test('Shop adapter does not verify or report success after a failed confirmation
   }, onClose: () => {}}));
   assert.match(markup, /CHECK ACCOUNT STATUS/);
   assert.match(markup, /Confirmed; account check incomplete/);
-  assert.match(markup, /cluster=custom/);
+  assert.match(markup, /COPY LOCAL TRANSACTION SIGNATURE/);
+  assert.doesNotMatch(markup, /cluster=devnet/);
 });

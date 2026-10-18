@@ -41,13 +41,27 @@ test('directory filters and decodes real RiderProfile layouts; zero, one and mul
   assert.deepEqual(data.filters, [{dataSize: 41}, {memcmp: data.program.coder.accounts.memcmp('riderProfile')}]);
   const first = await data.addRider();
   let rows = await discoverRiderDirectory(data.program);
+  assert.equal(rows.length, 0, 'profile alone is not discoverable');
+  const registerExpense = async ({rider, season}) => {
+    await data.put(season, 'season', {rider, seasonId: new BN(1), budgetCents: new BN(50000),
+      titleHash: Array(32).fill(0), status: 1, expenseCount: new BN(0), bump: 1});
+    assert.equal((await discoverRiderDirectory(data.program)).length, rows.length, 'season alone is not discoverable');
+    await data.put(season, 'season', {rider, seasonId: new BN(1), budgetCents: new BN(50000),
+      titleHash: Array(32).fill(0), status: 1, expenseCount: new BN(1), bump: 1});
+    await data.put(expensePda(season, 0n), 'expense', {season, expenseId: new BN(0), estimatedCostCents: new BN(50000),
+      committedCoverageCents: new BN(0), sponsorshipCount: new BN(0), category: 1,
+      descriptionHash: Array(32).fill(0), bump: 1});
+  };
+  await registerExpense(first);
+  rows = await discoverRiderDirectory(data.program);
   assert.equal(rows.length, 1);
   assert.equal(rows[0].displayName, 'Rider #1');
   assert.equal(rows[0].rider.toBase58(), first.rider.toBase58());
   assert.equal(rows[0].seasonTitle, null);
-  assert.equal(rows[0].expenseCount, 0);
+  assert.equal(rows[0].expenseCount, 1);
   const second = await data.addRider();
   data.profiles.push(data.profiles[0]); // Defensive deduplication if an RPC repeats a row.
+  await registerExpense(second);
   rows = await discoverRiderDirectory(data.program);
   assert.equal(rows.length, 2);
   assert.deepEqual(rows.map(row => row.rider.toBase58()), [first.rider, second.rider]

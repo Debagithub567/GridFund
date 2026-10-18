@@ -3,7 +3,7 @@ import {PublicKey} from '@solana/web3.js';
 import type {Gridsupport} from './gridsupport';
 import {fetchRegisteredRiderSnapshots} from './accounts';
 import type {ChainSnapshot} from './accounts';
-import {verifiedSeasonTitle} from './metadata';
+import {riderName, verifiedSeasonTitle} from './metadata';
 import {riderProfilePda} from './pdas';
 
 type RawProfile = {rider: PublicKey; bump: number};
@@ -19,13 +19,16 @@ export type DirectoryRider = {
   remainingCoverageCents: bigint;
 };
 
+export const riderIsDiscoverable = (snapshot: ChainSnapshot): boolean =>
+  snapshot.profileExists && snapshot.seasonExists && snapshot.expenses.length > 0;
+
 export function directoryEntry(snapshot: ChainSnapshot, index: number, seasonTitle?: string | null): DirectoryRider {
   const merchantCoverageCents = snapshot.expenses.reduce((sum, expense) => sum + expense.committedCoverageCents, 0n);
   const remainingCoverageCents = snapshot.expenses.reduce((sum, expense) =>
     sum + expense.estimatedCostCents - expense.committedCoverageCents, 0n);
   return {
     rider: snapshot.rider, profileAddress: snapshot.profileAddress, snapshot,
-    displayName: `Rider #${index + 1}`, seasonTitle: seasonTitle || null,
+    displayName: riderName(snapshot.rider.toBase58()) || `Rider #${index + 1}`, seasonTitle: seasonTitle || null,
     expenseCount: snapshot.expenses.length, seasonBudgetCents: snapshot.seasonBudgetCents,
     merchantCoverageCents, remainingCoverageCents,
   };
@@ -55,6 +58,6 @@ export async function discoverRiderDirectory(program: Program<Gridsupport>): Pro
   const riders = [...unique.values()].sort((left, right) =>
     left.toBase58() < right.toBase58() ? -1 : left.toBase58() > right.toBase58() ? 1 : 0);
   const snapshots = await fetchRegisteredRiderSnapshots(program, riders);
-  return Promise.all(snapshots.map(async (snapshot, index) => directoryEntry(snapshot, index,
+  return Promise.all(snapshots.filter(riderIsDiscoverable).map(async (snapshot, index) => directoryEntry(snapshot, index,
     snapshot.seasonTitleHash ? await verifiedSeasonTitle(snapshot.seasonAddress.toBase58(), snapshot.seasonTitleHash) : null)));
 }

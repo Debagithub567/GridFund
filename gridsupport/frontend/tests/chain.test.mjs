@@ -59,6 +59,18 @@ test('read adapter decodes actual IDL layouts and uses merchant coverage only', 
   assert.deepEqual(totals(state, id), {merchant: 10000, fan: 0, covered: 10000, remaining: 90000, progress: 10, supporters: 1});
   assert.equal(state.expenses[0].title, 'Expense #1');
   assert.equal(state.contributions[0].merchantAddress, merchant.toBase58());
+  await put(expense, 'expense', {season, expenseId: new BN(0), estimatedCostCents: new BN(100000),
+    committedCoverageCents: new BN(16000), sponsorshipCount: new BN(2), category: 3,
+    descriptionHash: Array(32).fill(7), bump: 1});
+  await put(sponsorshipPda(expense, 1n), 'sponsorship', {expense, merchant, sponsorshipId: new BN(1),
+    amountCents: new BN(6000), createdAt: new BN(1729000001), bump: 1});
+  const updated = snapshotToViewState(await fetchRiderSnapshot(program, rider));
+  assert.equal(totals(updated, id).merchant, 16000, 'expense coverage includes both verified records');
+  assert.equal(updated.contributions.length, 2);
+  await put(expense, 'expense', {season, expenseId: new BN(0), estimatedCostCents: new BN(100000),
+    committedCoverageCents: new BN(15000), sponsorshipCount: new BN(2), category: 3,
+    descriptionHash: Array(32).fill(7), bump: 1});
+  await assert.rejects(fetchRiderSnapshot(program, rider), /does not match its verified sponsorships/);
   accounts.set(profile.toBase58(), {...accounts.get(profile.toBase58()), owner: SystemProgram.programId});
   await assert.rejects(fetchRiderSnapshot(program, rider), /wrong program owner/);
   accounts.delete(programId.toBase58());

@@ -8,11 +8,13 @@ import {createGridProgram} from '../src/chain/program.ts';
 import {fetchRiderSnapshot} from '../src/chain/accounts.ts';
 import {initializeRider, createSeason, addExpense} from '../src/chain/riderTransactions.ts';
 import {sponsorExpense} from '../src/chain/merchantTransactions.ts';
-import {contributeDirect, parseMockUsdc, LOCAL_MOCK_USDC_MINT} from '../src/chain/fanTransactions.ts';
+import {contributeDirect, parseMockUsdc, prepareFanTokenAccount, LOCAL_MOCK_USDC_MINT} from '../src/chain/fanTransactions.ts';
 import {discoverRiderDirectory} from '../src/chain/riderDirectory.ts';
 import {sha256Text} from '../src/chain/metadata.ts';
 import {explorerTransactionUrl} from '../src/chain/explorer.ts';
 import {expensePda, sponsorshipPda, riderProfilePda} from '../src/chain/pdas.ts';
+import {confirmBudget} from '../src/chain/budget.ts';
+import {saveFanReceipt, verifiedFanReceipts} from '../src/chain/fanReceipts.ts';
 
 const rpc = process.env.GRIDSUPPORT_LOCAL_RPC;
 const mintAuthorityPath = process.env.GRIDSUPPORT_LOCAL_MINT_AUTHORITY;
@@ -41,8 +43,8 @@ test('signed Rider workflow on an isolated local validator', {skip: !rpc}, async
   assert.equal(initial.profileExists, false);
   const profile = await initializeRider(ctx);
   assert.equal(profile.snapshot.profileExists, true);
-  assert.deepEqual(progress.map(value => value.stage), ['awaiting-wallet','submitted','confirming']);
-  assert.match(explorerTransactionUrl(profile.signature, 'localnet', rpc), /cluster=custom/);
+  assert.deepEqual(progress.map(value => value.stage), ['awaiting-wallet','submitted','confirming','verifying']);
+  assert.equal(explorerTransactionUrl(profile.signature, 'localnet', rpc), null);
   await assert.rejects(initializeRider(ctx), /already exists/);
   await assert.rejects(createSeason(ctx, 0, 'Race season'), /positive season budget/);
   const season = await createSeason(ctx, 123456, '2026 Road Racing');
@@ -88,6 +90,35 @@ test('signed Rider workflow on an isolated local validator', {skip: !rpc}, async
   console.log('Local validator confirmed Rider signatures:', [profile.signature, season.signature, first.signature, second.signature].join(' '));
 });
 
+test('Confirm Racing Budget resumes safely on an isolated local validator', {skip: !rpc}, async () => {
+  const connection = new Connection(rpc, 'confirmed');
+  const rider = Keypair.generate();
+  const airdrop = await connection.requestAirdrop(rider.publicKey, 2_000_000_000);
+  assert.equal((await connection.confirmTransaction({signature: airdrop, ...await connection.getLatestBlockhash('confirmed')}, 'confirmed')).value.err, null);
+  const program = createGridProgram(connection);
+  const plan = {name: 'Pol Espargaró', season: '2026', expenses: [
+    {title: 'Racing tyres', description: 'Racing tyres', amountCents: 50000, category: 1},
+    {title: 'Fuel & travel', description: 'Fuel & travel', amountCents: 30000, category: 2},
+    {title: 'Accommodation & food', description: 'Accommodation & food', amountCents: 20000, category: 4},
+  ]};
+  const signedSend = async transaction => {
+    transaction.sign(rider);
+    return connection.sendRawTransaction(transaction.serialize(), {skipPreflight: false, preflightCommitment: 'confirmed'});
+  };
+  let requests = 0;
+  const context = {program, connection, rider: rider.publicKey, onProgress: () => {},
+    send: transaction => ++requests === 4 ? Promise.reject(new Error('User rejected the request')) : signedSend(transaction)};
+  await assert.rejects(confirmBudget(context, plan, () => {}), /rejected/);
+  assert.equal((await fetchRiderSnapshot(program, rider.publicKey)).expenses.length, 1);
+  const resumed = [];
+  const snapshot = await confirmBudget({...context, send: signedSend}, plan, step => resumed.push(step));
+  assert.deepEqual(snapshot.expenses.map(expense => expense.estimatedCostCents), [50000n, 30000n, 20000n]);
+  assert.equal(resumed.filter(step => step.stage === 'skipped').length, 3);
+  assert.equal(resumed.filter(step => step.stage === 'verified').length, 2);
+  const replay = await confirmBudget({...context, send: () => {throw new Error('Duplicate request')}}, plan, () => {});
+  assert.equal(replay.expenses.length, 3, 'replay signs no duplicate expense');
+});
+
 test('signed Fan mock-USDC transfer on an isolated local validator', {skip: !rpc || !mintAuthorityPath}, async () => {
   const connection = new Connection(rpc, 'confirmed');
   const authority = Keypair.fromSecretKey(Uint8Array.from(JSON.parse(readFileSync(mintAuthorityPath, 'utf8'))));
@@ -109,7 +140,13 @@ test('signed Fan mock-USDC transfer on an isolated local validator', {skip: !rpc
   await initializeRider(riderCtx);
   await createSeason(riderCtx, 50000, 'Fan token test');
   await addExpense(riderCtx, 50000, 1, 'Merchant coverage remains separate');
-  const fanToken = await getOrCreateAssociatedTokenAccount(connection, authority, LOCAL_MOCK_USDC_MINT, fan.publicKey);
+  const setupProgress = [];
+  const fanToken = await prepareFanTokenAccount({program, connection, fan: fan.publicKey, send: sendBy(fan),
+    onProgress: value => setupProgress.push(value.stage)});
+  assert.deepEqual(setupProgress, ['awaiting-wallet', 'submitted', 'confirming', 'verifying', 'confirmed']);
+  assert.equal((await getAccount(connection, fanToken.address)).amount, 0n, 'Fan setup does not mint tokens');
+  await assert.rejects(prepareFanTokenAccount({program, connection, fan: fan.publicKey,
+    send: () => {throw new Error('Duplicate setup signed')}, onProgress: () => {}}), /already exists/);
   await mintTo(connection, authority, LOCAL_MOCK_USDC_MINT, fanToken.address, authority, 100_000_000n);
   const riderAta = getAssociatedTokenAddressSync(LOCAL_MOCK_USDC_MINT, rider.publicKey);
   assert.equal(await connection.getAccountInfo(riderAta, 'confirmed'), null);
@@ -123,12 +160,12 @@ test('signed Fan mock-USDC transfer on an isolated local validator', {skip: !rpc
   assert.equal(transferred.balances.rider, amount);
   assert.equal((await getAccount(connection, fanToken.address)).amount, 98_765_568n);
   assert.equal((await getAccount(connection, riderAta)).amount, amount);
-  assert.match(explorerTransactionUrl(transferred.signature, 'localnet', rpc), /cluster=custom/);
+  assert.equal(explorerTransactionUrl(transferred.signature, 'localnet', rpc), null);
   assert.equal((await fetchRiderSnapshot(program, rider.publicKey)).expenses[0].committedCoverageCents, 0n);
   await assert.rejects(contributeDirect(ctx, rider.publicKey, 0n), /positive/);
   await assert.rejects(contributeDirect(ctx, rider.publicKey, 200_000_000n), /Insufficient/);
   const missingCtx = {...ctx, fan: Keypair.generate().publicKey};
-  await assert.rejects(contributeDirect(missingCtx, rider.publicKey, 1n), /missing/);
+  await assert.rejects(contributeDirect(missingCtx, rider.publicKey, 1n), /Set up a standard SPL gsUSDC token account/);
   const rejectedCtx = {...ctx, send: async () => {throw new Error('User rejected the request')}};
   await assert.rejects(contributeDirect(rejectedCtx, rider.publicKey, 1n), /rejected/);
 
@@ -190,7 +227,7 @@ test('signed Shop sponsorship workflow on an isolated local validator', {skip: !
   assert.equal(first.snapshot.expenses[0].sponsorships[0].merchant.toBase58(), merchant.publicKey.toBase58());
   assert.equal(first.snapshot.expenses[0].sponsorships[0].amountCents, 1234n);
   assert.deepEqual(progress, ['awaiting-wallet', 'submitted', 'confirming', 'verifying']);
-  assert.match(explorerTransactionUrl(first.signature, 'localnet', rpc), /cluster=custom/);
+  assert.equal(explorerTransactionUrl(first.signature, 'localnet', rpc), null);
   const second = await sponsorExpense(shopCtx, rider.publicKey, expense.address, 67);
   assert.equal(second.address.toBase58(), sponsorshipPda(expense.address, 1n).toBase58());
   assert.notEqual(first.address.toBase58(), second.address.toBase58());
@@ -264,15 +301,14 @@ test('shared directory selects actual Rider accounts for Shop then Fan on an iso
     let directory = await discoverRiderDirectory(program);
     const discovered = directory.find(entry => entry.rider.equals(rider.publicKey));
     const second = directory.find(entry => entry.rider.equals(otherRider.publicKey));
-    assert(discovered && second, 'both on-chain profiles appear without a typed address');
+    assert(discovered, 'registered rider appears without a typed address');
+    assert.equal(second, undefined, 'profile without a season and expense is hidden');
     assert.equal(new Set(directory.map(entry => entry.rider.toBase58())).size, directory.length);
     assert.equal(discovered.expenseCount, 1);
     assert.equal(discovered.snapshot.expenses[0].address.toBase58(), expense.address.toBase58());
-    assert.equal(second.expenseCount, 0);
-    assert.equal(second.seasonTitle, null);
     const sponsored = await sponsorExpense({program, connection, merchant: merchant.publicKey,
       send: sendBy(merchant), onProgress: () => {}}, discovered.rider, discovered.snapshot.expenses[0].address, 1234);
-    assert.match(explorerTransactionUrl(sponsored.signature, 'localnet', rpc), /cluster=custom/);
+    assert.equal(explorerTransactionUrl(sponsored.signature, 'localnet', rpc), null);
     directory = await discoverRiderDirectory(program);
     const selectedForFan = directory.find(entry => entry.rider.equals(rider.publicKey));
     assert.equal(selectedForFan.merchantCoverageCents, 1234n);
@@ -287,4 +323,74 @@ test('shared directory selects actual Rider accounts for Shop then Fan on an iso
     assert.equal(directory.find(entry => entry.rider.equals(rider.publicKey)).merchantCoverageCents, 1234n,
       'direct fan tokens do not alter merchant expense coverage');
     console.log('Local validator directory Shop/Fan signatures:', sponsored.signature, contribution.signature);
+  });
+
+test('judge walkthrough confirms a resumable €1,000 budget, €50 in-kind support and 50 gsUSDC',
+  {skip: !rpc || !mintAuthorityPath}, async () => {
+    const connection = new Connection(rpc, 'confirmed');
+    const authority = Keypair.fromSecretKey(Uint8Array.from(JSON.parse(readFileSync(mintAuthorityPath, 'utf8'))));
+    const rider = Keypair.generate(), merchant = Keypair.generate(), fan = Keypair.generate();
+    for (const signer of [authority, rider, merchant, fan]) {
+      const signature = await connection.requestAirdrop(signer.publicKey, 2_000_000_000);
+      assert.equal((await connection.confirmTransaction({signature, ...await connection.getLatestBlockhash('confirmed')}, 'confirmed')).value.err, null);
+    }
+    const program = createGridProgram(connection);
+    const sendBy = signer => async transaction => {
+      transaction.sign(signer);
+      return connection.sendRawTransaction(transaction.serialize(), {skipPreflight: false, preflightCommitment: 'confirmed'});
+    };
+    const plan = {name: 'Pol Espargaró', season: '2026', expenses: [
+      {title: 'Racing tyres', amountCents: 50000, category: 1, description: 'Racing tyres'},
+      {title: 'Fuel & travel', amountCents: 30000, category: 2, description: 'Fuel & travel'},
+      {title: 'Accommodation & food', amountCents: 20000, category: 4, description: 'Accommodation & food'},
+    ]};
+    let sends = 0;
+    const riderSend = sendBy(rider);
+    const steps = [];
+    const riderCtx = {program, connection, rider: rider.publicKey, onProgress: () => {},
+      send: transaction => {if (++sends === 4) throw new Error('User rejected the request'); return riderSend(transaction)}};
+    await assert.rejects(confirmBudget(riderCtx, plan, step => steps.push(step)), /rejected/);
+    assert.equal((await fetchRiderSnapshot(program, rider.publicKey)).expenses.length, 1, 'three completed transactions survive a rejected fourth');
+    const resumed = [];
+    const budget = await confirmBudget({...riderCtx, send: riderSend}, plan, step => resumed.push(step));
+    assert.deepEqual(budget.expenses.map(item => item.estimatedCostCents), [50000n, 30000n, 20000n]);
+    assert.equal(budget.seasonBudgetCents, 100000n);
+    assert.equal(resumed.filter(step => step.stage === 'skipped').length, 3);
+    assert.equal(resumed.filter(step => step.stage === 'verified').length, 2);
+    const replay = [];
+    await confirmBudget({...riderCtx, send: () => {throw new Error('Duplicate transaction')}} , plan, step => replay.push(step));
+    assert.equal(replay.filter(step => step.stage === 'skipped').length, 5, 'refresh/retry creates no duplicate accounts');
+    const directory = await discoverRiderDirectory(program);
+    assert.ok(directory.some(entry => entry.rider.equals(rider.publicKey)));
+    const accommodation = budget.expenses[2];
+    const sponsorship = await sponsorExpense({program, connection, merchant: merchant.publicKey, send: sendBy(merchant), onProgress: () => {}},
+      rider.publicKey, accommodation.address, 5000);
+    assert.equal(sponsorship.snapshot.expenses[2].committedCoverageCents, 5000n);
+    const fanToken = await getOrCreateAssociatedTokenAccount(connection, authority, LOCAL_MOCK_USDC_MINT, fan.publicKey);
+    await mintTo(connection, authority, LOCAL_MOCK_USDC_MINT, fanToken.address, authority, 100_000_000n);
+    const transferred = await contributeDirect({program, connection, fan: fan.publicKey, send: sendBy(fan), onProgress: () => {}},
+      rider.publicKey, parseMockUsdc('50'));
+    assert.equal(transferred.balances.fan, 50_000_000n);
+    assert.equal(transferred.balances.rider, 50_000_000n);
+    assert.equal((await getAccount(connection, getAssociatedTokenAddressSync(LOCAL_MOCK_USDC_MINT, rider.publicKey))).amount, 50_000_000n);
+    assert.equal((await fetchRiderSnapshot(program, rider.publicKey)).expenses[2].committedCoverageCents, 5000n,
+      'fan tokens never change merchant coverage');
+    const storage = new Map();
+    const previousStorage = globalThis.localStorage;
+    globalThis.localStorage = {getItem: key => storage.get(key) || null, setItem: (key, value) => storage.set(key, value)};
+    try {
+      saveFanReceipt({signature: transferred.signature, rider: rider.publicKey.toBase58(), fan: fan.publicKey.toBase58(),
+        source: transferred.source.toBase58(), amount: transferred.amount.toString()});
+      const receipts = await verifiedFanReceipts(connection, program, rider.publicKey);
+      assert.equal(receipts.length, 1);
+      assert.equal(BigInt(receipts[0].amount), 50_000_000n);
+      assert.equal(5000 + Number(BigInt(receipts[0].amount) / 10000n), 10000, 'combined presentation support is €100');
+      storage.clear();
+      const otherBrowser = await verifiedFanReceipts(connection, program, rider.publicKey);
+      assert.deepEqual(otherBrowser, receipts, 'Rider discovers verified Fan support without the Fan browser storage');
+      saveFanReceipt({...receipts[0], amount: '51000000'});
+      assert.deepEqual(await verifiedFanReceipts(connection, program, rider.publicKey), receipts,
+        'tampered browser data cannot change verified chain totals');
+    } finally {globalThis.localStorage = previousStorage}
+    console.log('Judge walkthrough confirmed signatures:', [sponsorship.signature, transferred.signature].join(' '));
   });

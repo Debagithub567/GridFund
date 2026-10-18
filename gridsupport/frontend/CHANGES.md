@@ -41,3 +41,10 @@ Initialized animation timing from the first animation-frame callback and clamped
 - Added deterministic multi-rider cards, safe names and season metadata fallbacks, explicit empty/RPC-error states, selection, refresh and 20-second polling. Wallet changes clear the selected rider and hide stale account data.
 - Shop and Fan keep their existing transaction adapters. Sponsorship updates directory merchant coverage; direct fan token transfers remain separate. Demo mode and presentation assets are unchanged.
 - Added directory unit/UI coverage and an isolated validator Rider → Shop → Fan discovery workflow. No contract, PDA, program ID, mint policy, Devnet deployment, or network endpoint was changed.
+
+## Final local judge presentation
+
+- Added editable Pol Espargaró / 2026 / €1,000 Rider budget orchestration with verified sequential account creation, partial-step recovery and duplicate-safe retries.
+- Added multi-expense Shop in-kind commitments, direct Fan support without expense selection, personalized verified confirmations, local signature copying and a presentation-only combined support display from verified Rider ATA transaction history. Rider accounts refresh every 20 seconds while connected.
+- Made Rider discovery the primary Shop/Fan view, hid the large technical account panel and default Demo switch, and kept Demo fixtures behind `VITE_ENABLE_DEMO=true`.
+- Added Community Help storyline and final messages while preserving the existing animation and missing-video fallback. Added the judge runbook and an isolated local-validator exact-amount workflow. The default Rust and frontend mint configurations now pin the separately verified Devnet mint; no Devnet deployment or token minting occurred.

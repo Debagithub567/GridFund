@@ -18,7 +18,7 @@ cd frontend
 GRIDSUPPORT_LOCAL_RPC=http://127.0.0.1:8899 GRIDSUPPORT_LOCAL_MINT_AUTHORITY=/tmp/gridsupport-fan-step5/mint-authority.json npm run test:local-validator
 ```
 
-The test creates temporary Rider, Shop and Fan keypairs, RiderProfiles, Seasons, Expenses, Shop sponsorships and Fan token transfers. Its shared-directory case creates two riders, discovers both through filtered `getProgramAccounts`, selects one for Shop and Fan transactions, and verifies that token support leaves merchant coverage unchanged. It funds fans only on this validator, creates rider ATAs in Fan transactions, prints test assertions and exits. Inspect a transaction signature with `solana confirm <SIGNATURE> --url http://127.0.0.1:8899 --verbose`, or open the modal's Explorer link if a compatible browser wallet is available. Explorer's localnet link needs a local RPC and may have browser cross-origin restrictions.
+The test creates temporary Rider, Shop and Fan keypairs, RiderProfiles, Seasons, Expenses, Shop sponsorships and Fan token transfers. Its shared-directory case creates two riders, discovers both through filtered `getProgramAccounts`, selects one for Shop and Fan transactions, and verifies that token support leaves merchant coverage unchanged. It funds fans only on this validator, creates rider ATAs in Fan transactions, prints test assertions and exits. Inspect a transaction signature with `solana confirm <SIGNATURE> --url http://127.0.0.1:8899 --verbose`, or copy the signature from the localnet confirmation UI. Localnet does not use a Devnet Explorer link.
 
 ## Start the frontend
 
@@ -29,7 +29,7 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Keep `VITE_SOLANA_CLUSTER=localnet` and `VITE_SOLANA_RPC_URL=http://127.0.0.1:8899` in `.env.local`. Open the URL printed by Vite. Demo mode needs no wallet. Connected Shop and Fan now discover RiderProfiles directly from the validator and present them as selectable cards; no rider-address environment variable is needed. The app never accepts a private key in an environment variable.
+Keep `VITE_SOLANA_CLUSTER=localnet` and `VITE_SOLANA_RPC_URL=http://127.0.0.1:8899` in `.env.local`. Open the URL printed by Vite. Connected mode is the default. Set `VITE_ENABLE_DEMO=true` for an explicitly labelled offline preview; it needs no wallet. Connected Shop and Fan discover RiderProfiles directly from the validator and present them as selectable cards; no rider-address environment variable is needed. The app never accepts a private key in an environment variable.
 
 ## Temporary wallet funding
 

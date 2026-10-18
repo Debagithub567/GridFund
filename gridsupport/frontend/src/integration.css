@@ -25,6 +25,7 @@
 .rider-directory-head h2{font-size:clamp(24px,3vw,38px);line-height:1;margin:8px 0}
 .rider-directory-head p,.rider-directory-state{font-size:12px;color:var(--muted)}
 .rider-directory-refresh,.rider-directory-state button,.rider-directory-card button{border:1px solid var(--lime);background:transparent;color:var(--lime);padding:11px 14px;font-size:10px;white-space:nowrap}
+.rider-directory-refresh{display:inline-flex;align-items:center;gap:7px;border-color:#ffffff40;color:var(--muted);padding:8px 10px}
 .rider-directory-refresh:disabled,.rider-directory-card button:disabled{opacity:.5}
 .rider-directory-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:14px}
 .rider-directory-card{display:grid;grid-template-columns:110px minmax(0,1fr);background:#1b1f1b;border:1px solid #ffffff25;min-width:0}
@@ -32,6 +33,12 @@
 .rider-directory-card>img{height:100%;min-height:220px;width:100%;object-fit:cover}
 .rider-directory-card-copy{padding:17px;min-width:0}
 .rider-directory-card h3{font-size:20px;margin:7px 0}
+.rider-directory-season{font-size:12px;color:#f4f3ed;margin:4px 0 10px}
+.rider-directory-needs{display:block;color:var(--lime);font-size:12px;margin-bottom:9px}
+.rider-directory-card details{margin:8px 0 12px;color:var(--muted);font-size:9px}
+.rider-directory-card summary{cursor:pointer}.rider-directory-card details small{overflow-wrap:anywhere}
+.rider-directory-card button{display:inline-flex;align-items:center;gap:7px;max-width:100%}
+.rider-directory-note{font-size:10px;color:var(--muted);margin:14px 0 0}
 .rider-directory-card small{display:block;color:var(--muted);font-size:10px;margin:5px 0 12px}
 .rider-directory-metrics{display:grid;gap:4px;margin-bottom:13px;font-size:11px}
 .rider-directory-card button[aria-pressed=true]{background:var(--lime);color:#101210}
@@ -40,3 +47,38 @@
 .rider-directory-state button{margin-top:8px}
 @media(max-width:700px){.dash-tools{flex-wrap:wrap;gap:9px}.mode-switch button{padding:8px}}
 @media(max-width:700px){.rider-directory-head{align-items:start;flex-direction:column}.rider-directory-card{grid-template-columns:90px minmax(0,1fr)}}
+.racing-budget,.shop-basket{margin:24px 0;padding:28px;background:#171b17;border:1px solid #d5fa5240}
+.racing-budget h2,.shop-basket h2{font-size:clamp(28px,3vw,42px);margin:8px 0}
+.racing-budget>p,.shop-basket>p,.racing-budget>small{display:block;color:var(--muted);font-size:12px;line-height:1.6;margin:8px 0 20px}
+.budget-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin:20px 0}
+.budget-fields label,.budget-lines label{display:grid;gap:9px;font-size:11px;text-transform:uppercase;letter-spacing:.08em}
+.budget-lines{display:grid;gap:12px}
+.budget-expense{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(105px,.55fr) minmax(120px,.7fr) minmax(0,1.3fr) auto;gap:12px;align-items:end;padding:14px;border:1px solid #ffffff25}
+.budget-expense .gs-input{width:100%;min-width:0}
+.budget-remove,.budget-add{background:transparent;border:1px solid #ffffff40;color:var(--lime);padding:12px;display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.budget-add{margin-top:14px;font-size:12px}
+.rider-registration .racing-budget{max-width:1100px;margin:0 auto}
+.rider-resume{max-width:1100px;margin:0 auto 18px;padding:16px;border:1px solid var(--lime);font-size:13px}
+.budget-lines .gs-money-input,.shop-basket-line .gs-money-input{padding:10px;min-width:0}
+.budget-lines .gs-money-input input,.shop-basket-line .gs-money-input input{font-size:22px;min-width:0;width:100%}
+.budget-total-line{display:flex;justify-content:space-between;align-items:center;margin:18px 0;padding:16px 0;border-top:1px solid #ffffff25;font-size:12px}
+.budget-total-line strong{font-size:30px;color:var(--lime)}
+.budget-progress{padding-left:20px;font-size:11px;line-height:1.8;color:var(--muted)}
+.budget-progress li{padding-left:5px}.budget-progress code{margin-left:12px;color:var(--lime)}
+.shop-basket-lines{display:grid;gap:10px;margin:20px 0}.shop-basket-line{display:grid;grid-template-columns:22px minmax(0,1fr) minmax(110px,180px);gap:15px;align-items:center;padding:12px;border:1px solid #ffffff25}
+.shop-basket-line>span:nth-child(2){display:grid;gap:4px}.shop-basket-line strong{font-size:14px}.shop-basket-line small{font-size:10px;color:var(--muted)}
+.shop-basket-confirmation{margin-top:24px;padding:20px;border:1px solid var(--lime);font-size:12px}.shop-basket-confirmation h3{font-size:25px;margin:8px 0}.shop-basket-confirmation li{margin-top:12px}.shop-basket-confirmation code{overflow-wrap:anywhere}.shop-basket-confirmation a,.shop-basket-confirmation button{display:inline-block;margin-left:10px;color:var(--lime);background:transparent;border:0;text-decoration:underline}
+@media(max-width:700px){.racing-budget,.shop-basket{padding:20px}.budget-fields,.budget-expense{grid-template-columns:1fr}.shop-basket-line{grid-template-columns:22px minmax(0,1fr)}.shop-basket-line .gs-money-input{grid-column:2}}
+.rider-registration>.text-link,.refined-dashboard>.text-link{background:transparent;border:0;color:var(--lime);padding:0;margin:0 0 24px;text-transform:uppercase}
+.rider-registration>.saved-feedback{max-width:1100px;margin:0 auto 18px}
+.rider-registration>.text-link{display:flex;margin:0 auto 22px;max-width:1100px}
+.rider-funding-summary{max-width:1100px;margin:20px 0 30px;padding:25px 28px;background:#171b17;border:1px solid #d5fa5240}
+.rider-funding-summary .eyebrow{color:var(--lime);margin:0 0 12px}
+.rider-funding-summary h2{font-size:clamp(30px,4vw,48px);margin:0 0 14px}
+.rider-funding-summary p{font-size:13px;line-height:1.55;margin:7px 0}
+.rider-funding-summary .budget-total-line{max-width:500px;margin:20px 0 12px}
+.rider-funding-summary small{display:block;color:var(--muted);line-height:1.5;margin-top:16px;max-width:680px}
+.budget-progress a,.saved-feedback a,.input-help a{color:var(--lime);text-decoration:underline;text-underline-offset:3px}
+.budget-progress a{margin-left:12px}
+.racing-budget input[readonly],.racing-budget select:disabled{opacity:.7;cursor:default}
+@media(max-width:700px){.rider-funding-summary{padding:20px}.rider-registration>.text-link{margin-left:0}.budget-progress a{display:block;margin-left:0}}

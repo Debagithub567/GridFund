@@ -16,16 +16,18 @@ test('wallet switching clears selected Rider data while the new directory reques
       stub('walletStub', `export const useConnection=()=>({connection:globalThis.__directoryConnection});
         export const useWallet=()=>globalThis.__directoryWallet;
         export const useAnchorWallet=()=>globalThis.__directoryWallet.anchorWallet;`),
-      stub('config', `export const cluster='localnet';`),
+      stub('config', `export const cluster='localnet';export const demoEnabled=false;`),
       stub('program', `export const createGridProgram=(_connection,wallet)=>({wallet});`),
       stub('accounts', `export const fetchRiderSnapshot=async(_program,rider)=>globalThis.__directorySnapshots.get(rider.toBase58());
         export const snapshotToViewState=snapshot=>({version:1,expenses:snapshot.expenses,contributions:[],selectedExpenseId:''});`),
       stub('riderTransactions', `export const initializeRider=async()=>{};export const createSeason=async()=>{};export const addExpense=async()=>{};`),
       stub('merchantTransactions', `export const sponsorExpense=async()=>{};`),
-      stub('fanTransactions', `export const approvedMockMint=null;export const contributeDirect=async()=>{};export const fetchTokenBalances=async()=>{};`),
+      stub('fanTransactions', `export const approvedMockMint=null;export const contributeDirect=async()=>{};export const fetchTokenBalances=async()=>{};export const prepareFanTokenAccount=async()=>{};`),
       stub('riderDirectory', `export const directoryEntry=()=>{};export const discoverRiderDirectory=program=>globalThis.__directoryRequests(program);`),
+      stub('budget', `export const confirmBudget=async()=>{};export const confirmAdditionalExpenses=async()=>{};`),
+      stub('fanReceipts', `export const saveFanReceipt=()=>{};export const verifiedFanReceipts=async()=>[];`),
       stub('metadata', `export const saveExpenseMetadata=()=>{};export const saveSeasonMetadata=()=>{};
-        export const verifiedExpenseMetadata=async()=>undefined;export const verifiedSeasonTitle=async()=>undefined;`),
+        export const verifiedExpenseMetadata=async()=>undefined;export const verifiedSeasonTitle=async()=>undefined;export const riderName=()=>undefined;`),
     ]);
     const source = await fs.readFile('src/chain/useConnectedData.ts', 'utf8');
     const compiled = ts.transpileModule(source, {compilerOptions: {target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext}})

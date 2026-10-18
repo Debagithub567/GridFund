@@ -11,6 +11,7 @@ if (requestedCluster !== 'localnet' && requestedCluster !== 'devnet') {
 }
 
 export const cluster: GridCluster = requestedCluster;
+export const demoEnabled = runtimeEnv.VITE_ENABLE_DEMO === 'true';
 export const endpoint = runtimeEnv.VITE_SOLANA_RPC_URL ||
   (cluster === 'localnet' ? 'http://127.0.0.1:8899' : clusterApiUrl('devnet'));
 export const programId = new PublicKey(idl.address);

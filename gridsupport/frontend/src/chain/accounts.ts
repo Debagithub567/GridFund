@@ -142,10 +142,14 @@ async function snapshotWithSeason(program: Program<Gridsupport>, rider: PublicKe
         sponsorshipId: BigInt(sponsorship.sponsorshipId.toString()),
       };
     });
+    const committedCoverageCents = BigInt(record.committedCoverageCents.toString());
+    if (sponsorships.reduce((sum, sponsorship) => sum + sponsorship.amountCents, 0n) !== committedCoverageCents) {
+      throw new Error(`Expense #${index + 1} coverage does not match its verified sponsorships. Refresh to try again.`);
+    }
     expenses.push({
       address, expenseId: BigInt(record.expenseId.toString()),
       estimatedCostCents: BigInt(record.estimatedCostCents.toString()),
-      committedCoverageCents: BigInt(record.committedCoverageCents.toString()),
+      committedCoverageCents,
       sponsorshipCount, category: record.category,
       descriptionHash: Array.from(record.descriptionHash), sponsorships,
     });
@@ -161,7 +165,7 @@ export function snapshotToViewState(snapshot: ChainSnapshot, selectedExpenseId =
     id: record.address.toBase58(),
     title: metadata?.expenses[record.address.toBase58()]?.title || `Expense #${record.expenseId + 1n}`,
     requiredCents: safeCount(record.estimatedCostCents, 'Expense amount'),
-    description: metadata?.expenses[record.address.toBase58()]?.description || `Category ${record.category} · description stored as a hash`,
+    description: metadata?.expenses[record.address.toBase58()]?.description || 'Racing expense',
     image: record.category === 1 ? 'tyres' : record.category === 3 ? 'food' : record.category === 4 ? 'stay' : 'track',
     onChain: true,
     committedCoverageCents: safeCount(record.committedCoverageCents, 'Merchant coverage'),

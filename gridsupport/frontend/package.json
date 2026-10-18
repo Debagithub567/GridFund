@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "tsc --noEmit && vite build",
-    "test": "node --test tests/model.test.mjs tests/impact-ui.test.mjs tests/rider-directory-hook.test.mjs && node --import tsx --test tests/chain.test.mjs tests/rider-directory.test.mjs tests/rider-transactions.test.mjs tests/shop-transactions.test.mjs tests/fan-transactions.test.mjs",
+    "test": "node --test tests/model.test.mjs tests/impact-ui.test.mjs tests/rider-directory-hook.test.mjs && node --import tsx --test tests/chain.test.mjs tests/rider-directory.test.mjs tests/rider-transactions.test.mjs tests/budget-registration.test.mjs tests/shop-transactions.test.mjs tests/fan-transactions.test.mjs",
     "test:local-validator": "node --import tsx --test tests/local-validator.test.mjs"
   },
   "dependencies": {

@@ -10,7 +10,7 @@ import {expensePda, riderProfilePda, seasonPda} from './pdas';
 import {sha256Text} from './metadata';
 
 export type RiderAction = 'profile' | 'season' | 'expense';
-export type RiderStage = 'awaiting-wallet' | 'submitted' | 'confirming' | 'confirmed';
+export type RiderStage = 'awaiting-wallet' | 'submitted' | 'confirming' | 'verifying' | 'confirmed';
 export type RiderProgress = {stage: RiderStage; signature?: string};
 export type RiderSend = (transaction: Transaction, connection: Connection) => Promise<string>;
 export type RiderTransactionContext = {
@@ -24,7 +24,7 @@ export type RiderTransactionResult = {signature: string; address: PublicKey; sna
 
 export function riderError(reason: unknown): string {
   const text = reason instanceof Error ? reason.message : String(reason);
-  if (/reject|declin|cancel|User denied/i.test(text)) return 'Wallet approval was rejected. No account was created.';
+  if (/reject|declin|cancel|User denied/i.test(text)) return 'Wallet approval was rejected. This step was not submitted.';
   if (/insufficient|0x1\b|Attempt to debit/i.test(text)) return 'Insufficient SOL for account rent and transaction fees. Fund this wallet on the selected network.';
   if (/already in use|already initialized|custom program error: 0x0\b/i.test(text)) return 'This account already exists. Refresh your on-chain accounts.';
   if (/blockhash|expired|not confirmed/i.test(text)) return 'Transaction confirmation expired. Refresh accounts before trying again.';
@@ -45,6 +45,7 @@ async function sendAndVerify(ctx: RiderTransactionContext, instruction: Transact
   ctx.onProgress({stage: 'confirming', signature});
   const confirmation = await ctx.connection.confirmTransaction({signature, blockhash, lastValidBlockHeight}, 'confirmed');
   if (confirmation.value.err) throw new Error(`Transaction ${signature} failed: ${JSON.stringify(confirmation.value.err)}`);
+  ctx.onProgress({stage: 'verifying', signature});
   // Confirmed RPC state can lag the transaction status briefly.
   for (let attempt = 0; attempt < 5; attempt++) {
     const snapshot = await latestSnapshot(ctx);

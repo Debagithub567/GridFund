@@ -11,13 +11,14 @@ import {cluster} from './config';
 
 export const MOCK_USDC_DECIMALS = 6;
 export const LOCAL_MOCK_USDC_MINT = new PublicKey(new Uint8Array(32).fill(77));
-export const approvedMockMint = cluster === 'localnet' ? LOCAL_MOCK_USDC_MINT : null;
+export const DEVNET_MOCK_USDC_MINT = new PublicKey('Eu5ZdwKKpSNej1koShWYBm7SKoPE2utvtb3yLWSjRxf1');
+export const approvedMockMint = cluster === 'localnet' ? LOCAL_MOCK_USDC_MINT : DEVNET_MOCK_USDC_MINT;
 const U64_MAX = (1n << 64n) - 1n;
 export type FanProgress = {stage: 'awaiting-wallet' | 'submitted' | 'confirming' | 'verifying' | 'confirmed'; signature?: string};
-export type TokenBalances = {fan: bigint; rider: bigint | null; riderAta: PublicKey};
+export type TokenBalances = {fan: bigint; rider: bigint | null; riderAta: PublicKey; fanAta: PublicKey | null; fanAtaExists: boolean};
 export type FanTransactionContext = {program: Program<Gridsupport>; connection: Connection; fan: PublicKey;
   send: RiderSend; onProgress: (value: FanProgress) => void};
-export type FanTransactionResult = {signature: string; rider: PublicKey; amount: bigint; balances: TokenBalances};
+export type FanTransactionResult = {signature: string; rider: PublicKey; source: PublicKey; amount: bigint; balances: TokenBalances};
 
 export function parseMockUsdc(value: string): bigint {
   const raw = value.trim();
@@ -65,7 +66,37 @@ export async function fetchTokenBalances(connection: Connection, fan: PublicKey 
     fan ? tokenAccounts(connection, fan, approvedMockMint) : Promise.resolve([]),
     riderToken(connection, rider, approvedMockMint),
   ]);
-  return {fan: sources.reduce((sum, account) => sum + account.amount, 0n), rider: destination.amount, riderAta: destination.address};
+  const fanAta = fan ? getAssociatedTokenAddressSync(approvedMockMint, fan, false, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID) : null;
+  return {fan: sources.reduce((sum, account) => sum + account.amount, 0n), rider: destination.amount, riderAta: destination.address,
+    fanAta, fanAtaExists: !!fanAta && sources.some(account => account.address.equals(fanAta))};
+}
+
+export async function prepareFanTokenAccount(ctx: FanTransactionContext): Promise<{signature: string; address: PublicKey}> {
+  const mint = await getMint(ctx.connection, approvedMockMint, 'confirmed', TOKEN_PROGRAM_ID);
+  if (mint.decimals !== MOCK_USDC_DECIMALS) throw new Error('The approved gsUSDC mint must have six decimals.');
+  const address = getAssociatedTokenAddressSync(approvedMockMint, ctx.fan, false, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
+  const existing = await ctx.connection.getAccountInfo(address, 'confirmed');
+  if (existing) {
+    const account = decodeToken(address, existing);
+    if (!account.owner.equals(ctx.fan) || !account.mint.equals(approvedMockMint)) throw new Error('Fan token account has the wrong owner or mint.');
+    throw new Error('The Fan gsUSDC token account already exists. Refresh token accounts.');
+  }
+  const {blockhash, lastValidBlockHeight} = await ctx.connection.getLatestBlockhash('confirmed');
+  const transaction = new Transaction({feePayer: ctx.fan, blockhash, lastValidBlockHeight}).add(
+    createAssociatedTokenAccountIdempotentInstruction(ctx.fan, address, ctx.fan, approvedMockMint, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID));
+  ctx.onProgress({stage: 'awaiting-wallet'});
+  const signature = await ctx.send(transaction, ctx.connection);
+  ctx.onProgress({stage: 'submitted', signature});
+  ctx.onProgress({stage: 'confirming', signature});
+  const confirmation = await ctx.connection.confirmTransaction({signature, blockhash, lastValidBlockHeight}, 'confirmed');
+  if (confirmation.value.err) throw new Error(`Transaction ${signature} failed: ${JSON.stringify(confirmation.value.err)}`);
+  ctx.onProgress({stage: 'verifying', signature});
+  const info = await ctx.connection.getAccountInfo(address, 'confirmed');
+  if (!info) throw new Error(`Transaction ${signature} confirmed, but the token account could not be verified. Refresh before retrying.`);
+  const account = decodeToken(address, info);
+  if (!account.owner.equals(ctx.fan) || !account.mint.equals(approvedMockMint)) throw new Error('Fan token account has the wrong owner or mint.');
+  ctx.onProgress({stage: 'confirmed', signature});
+  return {signature, address};
 }
 
 function metaAmount(balances: readonly {accountIndex: number; mint: string; uiTokenAmount: {amount: string}}[] | null | undefined,
@@ -86,7 +117,7 @@ export async function contributeDirect(ctx: FanTransactionContext, rider: Public
   if (!decodedProfile.rider.equals(rider)) throw new Error('The RiderProfile does not match the selected rider.');
   const sources = await tokenAccounts(ctx.connection, ctx.fan, approvedMockMint);
   const source = sources.find(account => account.amount >= amount);
-  if (!source) throw new Error(sources.length ? 'Insufficient mock-USDC balance in a single fan token account.' : 'Fan mock-USDC token account is missing. Fund a standard SPL token account first.');
+  if (!source) throw new Error(sources.length ? 'Insufficient gsUSDC balance in one Fan token account. Ask the authorized test-token holder to fund it.' : 'Set up a standard SPL gsUSDC token account and ask the authorized test-token holder to fund it.');
   const destination = await riderToken(ctx.connection, rider, approvedMockMint);
   const instruction = await ctx.program.methods.contributeDirect(new BN(amount.toString())).accountsStrict({
     fan: ctx.fan, riderProfile: profile, mockUsdcMint: approvedMockMint, fanTokenAccount: source.address,
@@ -128,7 +159,7 @@ export async function contributeDirect(ctx: FanTransactionContext, rider: Public
             throw new Error('The fan source token account changed owner or mint.');
           }
           const balances = await fetchTokenBalances(ctx.connection, ctx.fan, rider);
-          if (balances.rider !== null) return {signature, rider, amount, balances};
+          if (balances.rider !== null) return {signature, rider, source: source.address, amount, balances};
         }
       }
     } catch {

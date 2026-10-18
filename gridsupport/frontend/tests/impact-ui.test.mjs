@@ -8,12 +8,15 @@ const output=path.resolve('.impact-test-build');
 await fs.mkdir(output,{recursive:true});
 await fs.mkdir(path.join(output,'chain'),{recursive:true});
 await fs.writeFile(path.join(output,'chain/categories.mjs'),"export const expenseCategories=[{value:0,label:'General race need'}];\n");
-await fs.writeFile(path.join(output,'chain/config.mjs'),"export const endpoint='http://127.0.0.1:8899';\n");
+await fs.writeFile(path.join(output,'chain/config.mjs'),"export const endpoint='http://127.0.0.1:8899';export const demoEnabled=false;\n");
 await fs.writeFile(path.join(output,'chain/riderTransactions.mjs'),"export const riderError=error=>String(error);\n");
+await fs.writeFile(path.join(output,'chain/registration.mjs'),"export const loadBudgetIntent=()=>null;export const saveBudgetIntent=()=>{};export const registrationFromSnapshot=async()=>globalThis.__registrationPhase;export const defaultBudgetPlan={name:'Pol Espargaró',season:'2026',expenses:[{title:'Racing tyres',description:'Racing tyres',amountCents:50000,category:1},{title:'Fuel & travel',description:'Fuel & travel',amountCents:30000,category:2},{title:'Accommodation & food',description:'Accommodation & food',amountCents:20000,category:4}]};\n");
+await fs.writeFile(path.join(output,'chain/budget.mjs'),"export const budgetIsVerified=async()=>globalThis.__registrationPhase==='registered';export const matchingBudgetExpenses=async()=>[{match:{address:{toBase58:()=> '11111111111111111111111111111111'}}}];\n");
+await fs.writeFile(path.join(output,'chain/funding.mjs'),"export const fundingTotals=()=>({requiredCents:100000,merchantCents:10000,fanCents:0,fanUnits:0n,remainingCents:90000,progress:10,extraCents:0,extraCount:0});\n");
 await fs.writeFile(path.join(output,'chain/fanTransactions.mjs'),"export const approvedMockMint={};export const parseMockUsdc=value=>BigInt(value)*1000000n;export const formatMockUsdc=value=>String(value/1000000n)+' gsUSDC';\n");
 const explorerSource=await fs.readFile('src/chain/explorer.ts','utf8');
 await fs.writeFile(path.join(output,'chain/explorer.mjs'),ts.transpileModule(explorerSource,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText);
-for(const name of ['model','DemoState','Dashboard','RiderDirectory','Modal','TransactionResultModal','CommunityImpact']){
+for(const name of ['model','DemoState','Dashboard','RiderPage','RoleTabs','RiderDirectory','RacingBudget','ShopBasket','Modal','TransactionResultModal','CommunityImpact']){
  const source=await fs.readFile(`src/${name}.ts${name==='model'?'':'x'}`,'utf8');
  let code=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext,jsx:ts.JsxEmit.ReactJSX}}).outputText;
  code=code.replace(/import ['"]\.\/[^'"]+\.css['"];?/g,'').replace(/from ['"]\.\/([^'"]+)['"]/g,(_,name)=>`from './${name}.mjs'`);
@@ -36,6 +39,7 @@ const React=await import('react');const {act}=React;const {createRoot}=await imp
 const {MotionConfig}=await import('framer-motion');
 const {DemoProvider}=await import('../.impact-test-build/DemoState.mjs');
 const {default:Dashboard}=await import('../.impact-test-build/Dashboard.mjs');
+const {default:RiderPage}=await import('../.impact-test-build/RiderPage.mjs');
 const {initialState,addExpense,addContribution,STORAGE_KEY}=await import('../.impact-test-build/model.mjs');
 async function tick(delta=34){time+=delta;await act(async()=>{const tasks=[...frames.values()];frames.clear();for(const task of tasks)task(time)});}
 const root=createRoot(document.getElementById('root'));
@@ -60,6 +64,10 @@ test('click Community Impact opens its dialog and progresses without changing sa
  await act(async()=>{await new Promise(resolve=>setTimeout(resolve,1150))});
  assert.ok(document.querySelector('.victory-screen'),'completion opens victory celebration');
  assert.ok(document.querySelector('.video-placeholder-label'),'missing MP4 shows a designed placeholder');
+ await act(async()=>[...document.querySelectorAll('.victory-controls button')].find(button=>button.textContent.includes('Skip film')).click());
+ assert.match(document.querySelector('.victory-screen').textContent,/EVERY RIDER DESERVES A CHANCE/);
+ assert.match(document.querySelector('.victory-screen').textContent,/THANK YOU 🏁/);
+ assert.ok([...document.querySelectorAll('.victory-controls button')].some(button=>button.textContent.includes('Back to dashboard')));
  const replayCommunity=[...document.querySelectorAll('.victory-controls button')].find(b=>b.textContent.includes('Replay community'));
  await act(async()=>replayCommunity.click());assert.equal(document.querySelector('.impact-percent').textContent,'12%');
  const skip=[...document.querySelectorAll('.impact-actions button')].find(b=>b.textContent.includes('Skip'));
@@ -80,30 +88,26 @@ test('click Community Impact opens its dialog and progresses without changing sa
  assert.equal(document.querySelector('.support-confirm').disabled,false);
 
  const wallet='11111111111111111111111111111111';
- const actions=[];
  const integration={mode:'connected',setMode(){},cluster:'localnet',state:{version:1,expenses:[],contributions:[],selectedExpenseId:''},
-  snapshot:{rider:{toBase58:()=>wallet},profileExists:false,seasonExists:false,expenses:[]},status:'ready',error:'',walletAddress:wallet,
+  snapshot:{rider:{toBase58:()=>wallet},seasonAddress:{toBase58:()=>wallet},profileExists:false,seasonExists:false,expenses:[]},status:'ready',error:'',walletAddress:wallet,
   directory:[],directoryStatus:'ready',directoryError:'',selectedRiderAddress:'',selectRider(){},refreshDirectory(){},
   selectedExpenseId:'',selectExpense(){},refresh(){},writing:false,
-  runRiderAction:async(action,args,onProgress)=>{actions.push(action);onProgress({stage:'confirming',signature:'2'.repeat(88)});return {signature:'2'.repeat(88),address:{toBase58:()=>wallet}}},
+  runBudgetPlan:async()=>{},
+  runRiderAction:async()=>{},
  };
  await renderDashboard('racer',integration);
- assert.match(document.querySelector('.dash-top').textContent,/ONCHAIN RIDER/);
- assert.match(document.querySelector('.dash-profile').textContent,/No on-chain expense/);
- assert.doesNotMatch(document.querySelector('.dash-panel').textContent,/Test tyres/,'demo expense stays out of Connected mode');
- const createProfile=[...document.querySelectorAll('.chain-status-actions button')].find(button=>button.textContent.includes('CREATE RIDER PROFILE'));
- assert.ok(createProfile,'Rider action is available to the owner');
- await act(async()=>createProfile.click());
- assert.deepEqual(actions,['profile']);
- assert.match(document.querySelector('.transaction-modal').textContent,/Confirmed/);
- assert.match(document.querySelector('.transaction-modal').textContent,/dashboard has been refreshed/);
+ assert.equal(document.querySelector('.chain-status'),null,'Rider technical panel is removed');
+ assert.equal(document.querySelector('.combined-progress'),null,'Combined progress is removed');
+ assert.equal(document.querySelector('.add-expense'),null,'Registered Rider has no duplicate Add Expense control');
  await renderDashboard('shop',integration);
- assert.equal(document.querySelector('.support-confirm').disabled,true,'Connected Shop writes remain gated');
- assert.match(document.querySelector('.rider-directory').textContent,/No on-chain RiderProfiles/);
+ assert.match(document.querySelector('.rider-directory').textContent,/No riders have registered/);
+ assert.equal(document.querySelector('.chain-status'),null,'Shop has no large technical account panel');
+ assert.equal(document.querySelector('.mode-switch'),null,'judge view hides the Demo switch');
  await renderDashboard('shop',{...integration,directoryStatus:'error',directoryError:'RPC unavailable'});
  assert.match(document.querySelector('.rider-directory [role=alert]').textContent,/RPC unavailable/);
  await renderDashboard('fan',integration);
  assert.equal(document.querySelector('.support-confirm').disabled,true,'Connected Fan writes remain gated');
+ assert.equal(document.querySelector('.chain-status'),null,'Fan has no large technical account panel');
  const chainExpense={id:'chain-expense',title:'Circuit tyres',requiredCents:50000,description:'Tyres',image:'tyres',onChain:true,committedCoverageCents:10000,sponsorshipCount:1};
  let resolveSponsorship;let sponsorshipCalls=0;
  const shopIntegration={...integration,state:{version:1,expenses:[chainExpense],contributions:[],selectedExpenseId:chainExpense.id},
@@ -114,36 +118,51 @@ test('click Community Impact opens its dialog and progresses without changing sa
   snapshot:shopIntegration.snapshot,expenseCount:1,seasonBudgetCents:50000n,merchantCoverageCents:10000n,remainingCoverageCents:40000n};
  shopIntegration.directory=[firstRider];shopIntegration.selectRider=address=>{selectedRider=address};
  await renderDashboard('shop',{...shopIntegration,walletAddress:''});
- assert.equal(document.querySelector('.support-confirm').disabled,true,'missing merchant wallet blocks Connected Shop submission');
+ assert.equal(document.querySelector('.shop-basket .cta').disabled,true,'missing merchant wallet blocks Connected Shop submission');
  await renderDashboard('shop',shopIntegration);
- assert.equal(document.querySelectorAll('.rider-directory-card').length,1,'one valid rider makes one card');
- assert.match(document.querySelector('.rider-directory-card').textContent,/Season #1/,'missing metadata has an honest fallback');
+ assert.equal(document.querySelectorAll('.rider-directory-card').length,1);
  await act(async()=>document.querySelector('.rider-directory-card button').click());
- assert.equal(selectedRider,wallet,'Shop selects the on-chain rider address');
+ assert.equal(selectedRider,wallet);
  const secondAddress='22222222222222222222222222222222';
  const secondRider={...firstRider,rider:{toBase58:()=>secondAddress},profileAddress:{toBase58:()=>secondAddress},displayName:'Rider #2',expenseCount:0,
   seasonBudgetCents:null,merchantCoverageCents:0n,remainingCoverageCents:0n,snapshot:{...firstRider.snapshot,seasonExists:false}};
  await renderDashboard('shop',{...shopIntegration,directory:[firstRider,secondRider]});
- assert.equal(document.querySelectorAll('.rider-directory-card').length,2,'multiple riders show distinct cards');
+ assert.equal(document.querySelectorAll('.rider-directory-card').length,2);
  await renderDashboard('shop',shopIntegration);
- const record=document.querySelector('.support-confirm');
- assert.equal(record.disabled,false,'wallet and on-chain expense enable Shop action');
- assert.match(document.querySelector('.selected-support-overview').textContent,/merchant committed €100/);
+ const shopAmount=document.querySelector('.shop-basket-line input[inputmode=decimal]');
+ await act(async()=>{const setter=Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set;setter.call(shopAmount,'50');shopAmount.dispatchEvent(new window.Event('input',{bubbles:true}));document.querySelector('.shop-basket-line input[type=checkbox]').click()});
+ const record=document.querySelector('.shop-basket .cta');
  await act(async()=>{record.click();record.click()});
  assert.equal(sponsorshipCalls,1,'duplicate clicks submit only one sponsorship');
- assert.equal(document.querySelector('.support-confirm').disabled,true,'pending sponsorship disables submission');
+ assert.equal(document.querySelector('.shop-basket .cta').disabled,true,'pending sponsorship disables submission');
  await act(async()=>resolveSponsorship({signature:'2'.repeat(88),address:{toBase58:()=>wallet}}));
- assert.match(document.querySelector('.transaction-modal').textContent,/Sponsorship Recorded!/);
- assert.match(document.querySelector('.result-explorer').getAttribute('href'),/cluster=custom/);
+ assert.match(document.querySelector('.shop-basket-confirmation').textContent,/Thanks for supporting my racing/);
+ assert.match(document.querySelector('.shop-basket-confirmation').textContent,/€50/);
+ assert.match(document.querySelector('.shop-basket-confirmation').textContent,/Copy signature/);
  const updatedExpense={...chainExpense,committedCoverageCents:20000,sponsorshipCount:2};
  const confirmedView={...shopIntegration,state:{...shopIntegration.state,expenses:[updatedExpense]}};
- await renderDashboard('shop',confirmedView);
- assert.match(document.querySelector('.selected-support-overview').textContent,/merchant committed €200/);
- assert.match(document.querySelector('.selected-support-overview').textContent,/remaining €300/);
  await renderDashboard('racer',confirmedView);
  assert.match(document.querySelector('.dash-summary').textContent,/€200/,'Rider reads the same confirmed coverage');
+ const progressView={...confirmedView,state:{...confirmedView.state,expenses:[{...updatedExpense,committedCoverageCents:5000}]},
+  snapshot:{...confirmedView.snapshot,seasonBudgetCents:100000n},fanReceipts:[{amount:'50000000'}]};
+ await renderDashboard('racer',progressView);
+ assert.equal(document.querySelector('.combined-progress'),null);
  await renderDashboard('shop',{...confirmedView,state:{...confirmedView.state,expenses:[{...updatedExpense,committedCoverageCents:50000}]}});
- assert.equal(document.querySelector('.support-confirm').disabled,true,'fully covered on-chain expense cannot be sponsored');
+ assert.equal(document.querySelector('.shop-basket-line input[type=checkbox]').disabled,true,'fully covered on-chain expense cannot be sponsored');
+ const fuelExpense={...chainExpense,id:'fuel-expense',title:'Fuel & travel',requiredCents:30000,committedCoverageCents:0,sponsorshipCount:0};
+ const partialCalls=[];
+ const partialIntegration={...shopIntegration,selectedRiderAddress:'partial',state:{...shopIntegration.state,expenses:[chainExpense,fuelExpense]},
+  runMerchantAction:async(id,cents)=>{partialCalls.push([id,cents]);if(partialCalls.length===2)throw new Error('User rejected the request');return {signature:'3'.repeat(88),address:{toBase58:()=>wallet}}}};
+ await renderDashboard('shop',partialIntegration);
+ const basketLines=[...document.querySelectorAll('.shop-basket-line')];
+ for(const [index,line] of basketLines.entries()){
+  await act(async()=>line.querySelector('input[type=checkbox]').click());
+  await act(async()=>{const input=line.querySelector('input[inputmode=decimal]');Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set.call(input,index?'20':'10');input.dispatchEvent(new window.Event('input',{bubbles:true}))});
+ }
+ await act(async()=>document.querySelector('.shop-basket .cta').click());
+ assert.deepEqual(partialCalls,[[chainExpense.id,1000],[fuelExpense.id,2000]]);
+ assert.match(document.querySelector('.shop-basket-confirmation').textContent,/€10/,'first verified commitment stays visible');
+ assert.match(document.querySelector('.shop-basket [role=alert]').textContent,/rejected/i,'later rejection is reported');
  let resolveFan;let fanCalls=0;
  const fanIntegration={...confirmedView,state:{version:1,expenses:[],contributions:[],selectedExpenseId:''},
   snapshot:{...confirmedView.snapshot,profileExists:true},tokenBalances:{fan:50000000n,rider:0n,riderAta:{toBase58:()=>wallet}},
@@ -155,9 +174,29 @@ test('click Community Impact opens its dialog and progresses without changing sa
  assert.equal(fanCalls,1,'duplicate Fan clicks submit only once');
  assert.equal(document.querySelector('.support-confirm').disabled,true);
  await act(async()=>resolveFan({signature:'2'.repeat(88),rider:{toBase58:()=>wallet},balances:fanIntegration.tokenBalances}));
- assert.match(document.querySelector('.transaction-modal').textContent,/Contribution Transferred!/);
- assert.match(document.querySelector('.transaction-modal').textContent,/20 gsUSDC/);
+ assert.match(document.querySelector('.transaction-modal').textContent,/Thanks for supporting my racing!/);
+ assert.match(document.querySelector('.transaction-modal').textContent,/50 gsUSDC/);
+ assert.ok(!document.querySelector('#selected-expense'),'Connected Fan cannot select an expense');
  assert.equal(localStorage.getItem(STORAGE_KEY),JSON.stringify(state),'switching dashboards and modes preserves Demo data');
+ globalThis.__registrationPhase='unregistered';
+ const renderRiderPage=async view=>act(async()=>{root.render(React.createElement(DemoProvider,null,React.createElement(RiderPage,{integration:view})));await Promise.resolve()});
+ await renderRiderPage(integration);
+ assert.ok(document.querySelector('.racing-budget'),'unregistered rider sees registration card');
+ assert.equal(document.querySelector('.dash-layout'),null,'draft defaults do not appear as a registered dashboard');
+ assert.equal(document.querySelector('.racing-budget input').value,'Pol Espargaró');
+ assert.equal(document.querySelectorAll('.budget-expense').length,3);
+ await act(async()=>document.querySelector('.budget-add').click());
+ assert.equal(document.querySelectorAll('.budget-expense').length,4,'registration has one add expense control');
+ globalThis.__registrationPhase='registered';
+ await renderRiderPage(confirmedView);
+ assert.ok(document.querySelector('.racing-budget'),'registered rider keeps form first');
+ assert.equal(document.querySelector('.dash-layout'),null);
+ assert.match(document.querySelector('.saved-feedback').textContent,/Already registered/);
+ await act(async()=>document.querySelector('.rider-registration .text-link').click());
+ await act(async()=>{await Promise.resolve()});
+ assert.ok(document.querySelector('.dash-layout'),'Expense Dashboard opens on demand');
+ await renderRiderPage({...integration,walletAddress:'',snapshot:null,status:'needs-wallet'});
+ assert.equal(document.querySelector('.dash-layout'),null,'disconnect hides the prior wallet dashboard');
  }finally{await act(async()=>root.unmount());dom.window.close();await fs.rm(output,{recursive:true,force:true})}
 });
 process.on('exit',()=>{dom.window.close()});

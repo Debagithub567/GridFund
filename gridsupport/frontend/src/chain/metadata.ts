@@ -24,6 +24,13 @@ const equalHash = (left: unknown, right: number[]) => Array.isArray(left) && lef
 export function saveSeasonMetadata(address: string, title: string, titleHash: number[]): void {
   write('season', address, {title: title.trim(), titleHash} satisfies StoredSeason);
 }
+export function saveRiderName(address: string, name: string): void {
+  if (name.trim()) write('rider', address, {name: name.trim()});
+}
+export function riderName(address: string): string | undefined {
+  const record = read('rider', address) as {name?: unknown} | null;
+  return typeof record?.name === 'string' && record.name.trim() ? record.name.trim().slice(0, 80) : undefined;
+}
 export function saveExpenseMetadata(address: string, title: string, description: string, category: number, descriptionHash: number[]): void {
   write('expense', address, {title: title.trim(), description: description.trim(), category, descriptionHash} satisfies StoredExpense);
 }
